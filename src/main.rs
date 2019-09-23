@@ -24,14 +24,22 @@ struct Buffer {
     is_dirty: bool,
 }
 
+struct Pane {
+    x: i32 ,
+    y: i32,
+    w: u32,
+    h: u32,
+    cursor_x: usize,
+    cursor_y: usize,
+}
+
 // impl Buffer {
 // }
 
 struct App {
     line_height: i32,
     buffers: Vec<Buffer>,
-    x: usize,
-    y: usize,
+    panes: Vec<Pane>,
     scroll_idx: usize,
     font_path: String,
     font_size: u16,
@@ -40,6 +48,7 @@ struct App {
     scroll_offset: i32,
 
     buffer_idx: usize,
+    pane_idx: usize,
 }
 
 impl App {
@@ -63,13 +72,12 @@ fn main() -> Result<(), String> {
     let texture_creator = canvas.texture_creator();
 
     // Initialize app
-    // let (width, height) = canvas.window().size();
     let mut app = App {
         line_height: 16,
         buffers: Vec::new(),
+        panes: Vec::new(),
         buffer_idx: 0,
-        x: 0,
-        y: 0,
+        pane_idx: 0,
         scroll_idx: 0,
         font_path: "data/LiberationSans-Regular.ttf".to_string(),
         font_size: 16,
@@ -99,36 +107,43 @@ fn main() -> Result<(), String> {
             app.buffers[app.buffer_idx].contents.push(String::new());
         }
     }
-    // app.buffers.push(Buffer {
-    //     contents: Vec::new(),
-    // });
+    let (width, height) = canvas.window().size();
+    app.panes.push(Pane {
+        x: 50,
+        y: 50,
+        w: width - 100,
+        h: height - 100,
+        cursor_x: 0,
+        cursor_y: 0,
+    });
+
     let font = ttf_context.load_font(&app.font_path, app.font_size).unwrap();
     app.line_height = font.height();
-
-    // app.buffers[app.buffer_idx].contents.push(String::new());
 
     'mainloop: loop {
         for event in sdl_context.event_pump()?.poll_iter() {
             match event {
                 Event::Quit {..} => break 'mainloop,
                 Event::TextInput { text, .. } => {
-                    app.buffers[app.buffer_idx].contents[app.y].insert_str(app.x, &text);
-                    app.x += 1;
+                    app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].insert_str(app.panes[app.pane_idx].cursor_x, &text);
+                    app.panes[app.pane_idx].cursor_x += 1;
                     app.buffers[app.buffer_idx].is_dirty = true;
                 },
                 Event::MouseButtonDown { x, y, .. } => {
-                    // let current_line = app.buffers[app.buffer_idx].contents[app.y];
+                    let current_line = &app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y];
+                    // Measure the length of each substring of the line until we get one that's
+                    // bigger than the x position of the mouse
                     let mut screen_x = 0;
                     let mut char_x = 0;
-                    while char_x < x && (screen_x as usize) < app.buffers[app.buffer_idx].contents[app.y].len() {
-                        let (cx, _) = font.size_of(&app.buffers[app.buffer_idx].contents[app.y][..screen_x]).unwrap();
+                    while char_x < x && (screen_x as usize) < app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].len() {
+                        let (cx, _) = font.size_of(&app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y][..screen_x]).unwrap();
                         char_x = cx as i32;
                         screen_x += 1;
                     }
                     // TODO fix the sizing situation (padding, bars, etc.)
                     let screen_y = ((y as f64 - app.line_height as f64 - 15 as f64) / app.line_height as f64).floor() as usize;
-                    app.x = screen_x;
-                    app.y = app.scroll_idx + screen_y;
+                    app.panes[app.pane_idx].cursor_x = screen_x;
+                    app.panes[app.pane_idx].cursor_y = app.scroll_idx + screen_y;
                 },
                 Event::MouseWheel { y, .. } => {
                     let candidate = app.scroll_idx as i32 - (y * 3);
@@ -143,16 +158,16 @@ fn main() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(kc), keymod, .. } => {
                     match kc {
                         Keycode::Up => {
-                            if app.y > 0 { app.y -= 1; }
+                            if app.panes[app.pane_idx].cursor_y > 0 { app.panes[app.pane_idx].cursor_y -= 1; }
                         },
                         Keycode::Down => {
-                            app.y += 1;
+                            app.panes[app.pane_idx].cursor_y += 1;
                         },
                         Keycode::Left => {
-                            if app.x > 0 { app.x -= 1; }
+                            if app.panes[app.pane_idx].cursor_x > 0 { app.panes[app.pane_idx].cursor_x -= 1; }
                         },
                         Keycode::Right => {
-                            app.x += 1;
+                            app.panes[app.pane_idx].cursor_x += 1;
                         }
                         Keycode::PageUp => {
                             if app.scroll_idx < 3 {
@@ -160,29 +175,26 @@ fn main() -> Result<(), String> {
                                 app.scroll_offset = 0;
                             } else {
                                 app.scroll_idx -= 3;
-                                // app.scroll_offset -= (3 * app.font_size as usize) as u32;
                             }
                         },
                         Keycode::PageDown => {
                             if app.scroll_idx > app.buffers[app.buffer_idx].contents.len() - 3 {
                                 app.scroll_idx = app.buffers[app.buffer_idx].contents.len();
-                                // app.scroll_offset = (app.buffers[app.buffer_idx].contents.len() * app.font_size as usize) as u32;
                             } else {
                                 app.scroll_idx += 3;
-                                // app.scroll_offset += (3 * app.font_size as u32) as u32;
                             }
                         },
                         Keycode::Return => {
-                            app.y += 1;
-                            app.x = 0;
-                            app.buffers[app.buffer_idx].contents.insert(app.y, String::new());
+                            app.panes[app.pane_idx].cursor_y += 1;
+                            app.panes[app.pane_idx].cursor_x = 0;
+                            app.buffers[app.buffer_idx].contents.insert(app.panes[app.pane_idx].cursor_y, String::new());
                         }
                         Keycode::Backspace => {
-                            if app.x > 0 {
-                                if app.x < app.buffers[app.buffer_idx].contents[app.y].len() {
-                                    app.buffers[app.buffer_idx].contents[app.y].remove(app.x - 1);
+                            if app.panes[app.pane_idx].cursor_x > 0 {
+                                if app.panes[app.pane_idx].cursor_x < app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].len() {
+                                    app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].remove(app.panes[app.pane_idx].cursor_x - 1);
                                 }
-                                app.x -= 1;
+                                app.panes[app.pane_idx].cursor_x -= 1;
                                 app.buffers[app.buffer_idx].is_dirty = true;
                             }
                         }
@@ -219,14 +231,23 @@ fn main() -> Result<(), String> {
         canvas.set_draw_color(Color::RGBA(200, 200, 200, 255));
         canvas.clear();
 
+        canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
+        let p = &app.panes[app.pane_idx];
+        let rect = rect!(p.x, p.y, p.w, p.h);
+        canvas.fill_rect(rect);
+
+        let padding: i32 = 5;
+        let bar_height: i32 = (app.line_height + padding * 2) as i32;
+        let base_x: i32 = app.panes[app.pane_idx].x;
+        let base_y: i32 = app.panes[app.pane_idx].y + bar_height;
         // Draw the contents of the file and the cursor.
         for (i, entry) in app.buffers[app.buffer_idx].contents.iter().enumerate() {
 
             // Right-pad the string to allow the cursor to be rendered off the end of the line of
             // text
             let mut render_text = entry.clone();
-            if render_text.len() < app.x {
-                for _ in render_text.len()..app.x {
+            if render_text.len() < app.panes[app.pane_idx].cursor_x {
+                for _ in render_text.len()..app.panes[app.pane_idx].cursor_x {
                     render_text.push(' ');
                 }
             }
@@ -235,32 +256,32 @@ fn main() -> Result<(), String> {
                 render_text.push(' ');
             }
 
-            let padding = 5;
-            
             // Render the full line of text
             let surface = font.render(&render_text).blended(Color::RGBA(40, 0, 0, 255)).unwrap();
             let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
             let TextureQuery { width, height, .. } = texture.query();
-            let target = rect!(0 + padding, i as i32 * app.line_height - app.scroll_offset + padding as i32 * 3 + app.line_height as i32, width, height);
+            let target = rect!(base_x + padding, base_y + padding + i as i32 * app.line_height - app.scroll_offset, width, height);
             canvas.copy(&texture, None, Some(target))?;
 
             // Draw the cursor if we're rendering the cursor line
-            if i == app.y {
+            if i == app.panes[app.pane_idx].cursor_y {
                 // If the cursor isn't at the beginning of the line, render the text before the
                 // cursor so we can measure its width.
-                let text_right = &render_text[..app.x];
+                let text_right = &render_text[..app.panes[app.pane_idx].cursor_x];
                 let mut cursor_x = 0;
                 let (cursor_x, _) = font.size_of(text_right).unwrap();
-                let cursor = rect!(cursor_x + padding, i as i32 * app.line_height - app.scroll_offset + padding as i32 * 3 + app.line_height as i32, 3, height);
+                let cursor = rect!(
+                    base_x + padding + cursor_x as i32,
+                    base_y + padding * app.line_height - app.scroll_offset,
+                    3,
+                    height);
                 canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
                 canvas.fill_rect(cursor)?;
             }
         }
 
         // Draw bar
-        let (width, _height) = canvas.window().size();
-        let padding = 5;
-        let rect = rect!(0, 0, width, app.line_height + padding * 2);
+        let rect = rect!(base_x, base_y - bar_height, app.panes[app.pane_idx].w, bar_height);
         canvas.set_draw_color(Color::RGBA(50, 50, 50, 255));
         canvas.fill_rect(rect)?;
         let mut dirty_text = "";
@@ -271,7 +292,7 @@ fn main() -> Result<(), String> {
         let surface = font.render(&bar_text).blended(Color::RGBA(200, 200, 200, 255)).unwrap();
         let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
         let TextureQuery { width: w, height: h, .. } = texture.query();
-        let target = rect!(0 + padding, 0 + padding, w, h);
+        let target = rect!(base_x + padding, base_y - bar_height + padding, w, h);
         canvas.copy(&texture, None, Some(target))?;
 
         canvas.present()
