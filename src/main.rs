@@ -95,7 +95,8 @@ fn main() -> Result<(), String> {
                 contents: Vec::new(),
                 name: "UNNAMED".to_string(),
                 is_dirty: false,
-            })
+            });
+            app.buffers[app.buffer_idx].contents.push(String::new());
         }
     }
     // app.buffers.push(Buffer {
@@ -171,6 +172,11 @@ fn main() -> Result<(), String> {
                                 // app.scroll_offset += (3 * app.font_size as u32) as u32;
                             }
                         },
+                        Keycode::Return => {
+                            app.y += 1;
+                            app.x = 0;
+                            app.buffers[app.buffer_idx].contents.insert(app.y, String::new());
+                        }
                         Keycode::Backspace => {
                             if app.x > 0 {
                                 if app.x < app.buffers[app.buffer_idx].contents[app.y].len() {
