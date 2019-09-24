@@ -176,7 +176,7 @@ fn main() -> Result<(), String> {
                     let pane = &mut app.panes[app.pane_idx];
                     let bar_height: i32 = (pane.line_height + 5 * 2) as i32;
                     let padding = 5;
-                    let mut y_idx = ((f64::from(y) - f64::from(pane.y) - f64::from(padding) - f64::from(bar_height) / f64::from(pane.line_height)).floor()) as usize + pane.scroll_idx;
+                    let mut y_idx = ((f64::from(y) - f64::from(pane.y) - f64::from(padding) - f64::from(bar_height)) / f64::from(pane.line_height)).floor() as usize + pane.scroll_idx;
                     let mut max_x_idx = 0;
                     if let Some(b) = pane.buffer_id {
                         y_idx = min(y_idx, app.buffers[b].contents.len() - 1);
