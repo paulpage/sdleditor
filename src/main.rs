@@ -1,15 +1,16 @@
 extern crate sdl2;
 
-// use std::path::PathBuf;
 use std::fs;
 use std::io::{BufReader, BufRead};
 use std::env;
+use std::cmp::{min, max};
 
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::rect::Rect;
-use sdl2::render::TextureQuery;
+use sdl2::render::{WindowCanvas, TextureQuery};
 use sdl2::pixels::Color;
+use sdl2::ttf::Font;
 
 // handle the annoying Rect i32
 macro_rules! rect(
@@ -24,22 +25,51 @@ struct Buffer {
     is_dirty: bool,
 }
 
-struct Pane {
+struct Pane<'a> {
     x: i32 ,
     y: i32,
     w: u32,
     h: u32,
     cursor_x: usize,
     cursor_y: usize,
+    font: Font<'a, 'a>,
+    line_height: i32,
+    buffer_id: Option<usize>,
 }
 
-// impl Buffer {
-// }
+impl<'a> Pane<'a> {
 
-struct App {
+    fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
+        canvas.set_draw_color(color);
+        let x = self.x + max(rect.x, 0);
+        let y = self.y + max(rect.y, 0);
+        let w = min(self.w as i32 - rect.x, rect.w);
+        let h = min(self.h as i32 - rect.y, rect.h);
+        canvas.fill_rect(rect!(x, y, w, h));
+    }
+
+    // Draw the given text on the given canvas with the given color.
+    // Upper left corner of the text will be the x, y of the rect,
+    // and text outside the width and height of the rect will be cut off.
+    fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) {
+        if y > 0 && x > 0 {
+            let surface = self.font.render(text).blended(color).unwrap();
+            let texture_creator = canvas.texture_creator();
+            let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
+            let TextureQuery { width: w, height: h, .. } = texture.query();
+            let w = min(self.w as i32 - x, w as i32);
+            let h = min(self.h as i32 - y, h as i32);
+            let source = rect!(0, 0, w, h);
+            let target = rect!(self.x + x, self.y + y, w, h);
+            canvas.copy(&texture, Some(source), Some(target));
+        }
+    }
+}
+
+struct App<'a> {
     line_height: i32,
     buffers: Vec<Buffer>,
-    panes: Vec<Pane>,
+    panes: Vec<Pane<'a>>,
     scroll_idx: usize,
     font_path: String,
     font_size: u16,
@@ -51,7 +81,7 @@ struct App {
     pane_idx: usize,
 }
 
-impl App {
+impl<'a> App<'a> {
     fn active_buffer(&mut self) -> &mut Buffer {
         &mut self.buffers[self.buffer_idx]
     }
@@ -82,6 +112,7 @@ fn main() -> Result<(), String> {
         font_path: "data/LiberationSans-Regular.ttf".to_string(),
         font_size: 16,
         scroll_offset: 0,
+        // canvas: canvas,
     };
 
     let args: Vec<String> = env::args().collect();
@@ -105,8 +136,9 @@ fn main() -> Result<(), String> {
                 is_dirty: false,
             });
             app.buffers[app.buffer_idx].contents.push(String::new());
-        }
+        },
     }
+    let font = ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap();
     let (width, height) = canvas.window().size();
     app.panes.push(Pane {
         x: 50,
@@ -115,10 +147,13 @@ fn main() -> Result<(), String> {
         h: height - 100,
         cursor_x: 0,
         cursor_y: 0,
+        font: font,
+        line_height: 0,
+        buffer_id: Some(0),
     });
+    app.panes[app.pane_idx].line_height = app.panes[app.pane_idx].font.height();
 
-    let font = ttf_context.load_font(&app.font_path, app.font_size).unwrap();
-    app.line_height = font.height();
+    app.line_height = app.panes[app.pane_idx].font.height();
 
     'mainloop: loop {
         for event in sdl_context.event_pump()?.poll_iter() {
@@ -133,17 +168,17 @@ fn main() -> Result<(), String> {
                     let current_line = &app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y];
                     // Measure the length of each substring of the line until we get one that's
                     // bigger than the x position of the mouse
-                    let mut screen_x = 0;
-                    let mut char_x = 0;
-                    while char_x < x && (screen_x as usize) < app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].len() {
-                        let (cx, _) = font.size_of(&app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y][..screen_x]).unwrap();
-                        char_x = cx as i32;
-                        screen_x += 1;
-                    }
+                    // let mut screen_x = 0;
+                    // let mut char_x = 0;
+                    // while char_x < x && (screen_x as usize) < app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y].len() {
+                    //     let (cx, _) = font.size_of(&app.buffers[app.buffer_idx].contents[app.panes[app.pane_idx].cursor_y][..screen_x]).unwrap();
+                    //     char_x = cx as i32;
+                    //     screen_x += 1;
+                    // }
                     // TODO fix the sizing situation (padding, bars, etc.)
-                    let screen_y = ((y as f64 - app.line_height as f64 - 15 as f64) / app.line_height as f64).floor() as usize;
-                    app.panes[app.pane_idx].cursor_x = screen_x;
-                    app.panes[app.pane_idx].cursor_y = app.scroll_idx + screen_y;
+                    // let screen_y = ((y as f64 - app.line_height as f64 - 15 as f64) / app.line_height as f64).floor() as usize;
+                    // app.panes[app.pane_idx].cursor_x = screen_x;
+                    // app.panes[app.pane_idx].cursor_y = app.scroll_idx + screen_y;
                 },
                 Event::MouseWheel { y, .. } => {
                     let candidate = app.scroll_idx as i32 - (y * 3);
@@ -231,69 +266,66 @@ fn main() -> Result<(), String> {
         canvas.set_draw_color(Color::RGBA(200, 200, 200, 255));
         canvas.clear();
 
-        canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
-        let p = &app.panes[app.pane_idx];
-        let rect = rect!(p.x, p.y, p.w, p.h);
-        canvas.fill_rect(rect);
+        for mut pane in &mut app.panes {
+            if let Some(b) = pane.buffer_id {
+                let buffer = &app.buffers[b];
+                canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
+                // let p = &mut app.panes[app.pane_idx];
+                let rect = rect!(pane.x, pane.y, pane.w, pane.h);
+                canvas.fill_rect(rect);
 
-        let padding: i32 = 5;
-        let bar_height: i32 = (app.line_height + padding * 2) as i32;
-        let base_x: i32 = app.panes[app.pane_idx].x;
-        let base_y: i32 = app.panes[app.pane_idx].y + bar_height;
-        // Draw the contents of the file and the cursor.
-        for (i, entry) in app.buffers[app.buffer_idx].contents.iter().enumerate() {
+                let padding: i32 = 5;
+                let bar_height: i32 = (app.line_height + padding * 2) as i32;
+                let base_x: i32 = pane.x;
+                let base_y: i32 = pane.y + bar_height;
+                // Draw the contents of the file and the cursor.
+                for (i, entry) in buffer.contents.iter().enumerate() {
 
-            // Right-pad the string to allow the cursor to be rendered off the end of the line of
-            // text
-            let mut render_text = entry.clone();
-            if render_text.len() < app.panes[app.pane_idx].cursor_x {
-                for _ in render_text.len()..app.panes[app.pane_idx].cursor_x {
-                    render_text.push(' ');
+                    // Right-pad the string to allow the cursor to be rendered off the end of the line of
+                    // text
+                    let mut render_text = entry.clone();
+                    if render_text.len() < pane.cursor_x {
+                        for _ in render_text.len()..pane.cursor_x {
+                            render_text.push(' ');
+                        }
+                    }
+                    // Avoid trying to render an empty string, which is an error in SDL
+                    if render_text.len() == 0 {
+                        render_text.push(' ');
+                    }
+
+                    // Render the full line of text
+                    let height = pane.line_height;
+                    pane.draw_text(
+                        &mut canvas,
+                        Color::RGBA(40, 0, 0, 255),
+                        padding,
+                        bar_height + padding + i as i32 * pane.line_height - app.scroll_offset,
+                        &render_text);
+
+                    // Draw the cursor if we're rendering the cursor line
+                    if i == pane.cursor_y {
+                        // If the cursor isn't at the beginning of the line, render the text before the
+                        // cursor so we can measure its width.
+                        let text_right = &render_text[..pane.cursor_x];
+                        let mut cursor_x = 0;
+                        let (cursor_x, _) = pane.font.size_of(text_right).unwrap();
+                        let rect = rect!(padding + cursor_x as i32, bar_height + padding + i as i32 * pane.line_height - app.scroll_offset, 3, pane.line_height);
+                        pane.fill_rect(&mut canvas, Color::RGBA(0, 0, 0, 255), rect);
+                    }
                 }
-            }
-            // Avoid trying to render an empty string, which is an error in SDL
-            if render_text.len() == 0 {
-                render_text.push(' ');
-            }
 
-            // Render the full line of text
-            let surface = font.render(&render_text).blended(Color::RGBA(40, 0, 0, 255)).unwrap();
-            let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
-            let TextureQuery { width, height, .. } = texture.query();
-            let target = rect!(base_x + padding, base_y + padding + i as i32 * app.line_height - app.scroll_offset, width, height);
-            canvas.copy(&texture, None, Some(target))?;
-
-            // Draw the cursor if we're rendering the cursor line
-            if i == app.panes[app.pane_idx].cursor_y {
-                // If the cursor isn't at the beginning of the line, render the text before the
-                // cursor so we can measure its width.
-                let text_right = &render_text[..app.panes[app.pane_idx].cursor_x];
-                let mut cursor_x = 0;
-                let (cursor_x, _) = font.size_of(text_right).unwrap();
-                let cursor = rect!(
-                    base_x + padding + cursor_x as i32,
-                    base_y + padding * app.line_height - app.scroll_offset,
-                    3,
-                    height);
-                canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
-                canvas.fill_rect(cursor)?;
+                // Draw bar
+                let rect = rect!(0, 0, pane.w, bar_height);
+                pane.fill_rect(&mut canvas, Color::RGBA(50, 50, 50, 255), rect);
+                let mut dirty_text = "";
+                if buffer.is_dirty {
+                    dirty_text = "*";
+                }
+                let bar_text = format!("{} {}", dirty_text, &buffer.name);
+                pane.draw_text(&mut canvas, Color::RGBA(200, 200, 200, 255), padding, padding, &bar_text);
             }
         }
-
-        // Draw bar
-        let rect = rect!(base_x, base_y - bar_height, app.panes[app.pane_idx].w, bar_height);
-        canvas.set_draw_color(Color::RGBA(50, 50, 50, 255));
-        canvas.fill_rect(rect)?;
-        let mut dirty_text = "";
-        if app.buffers[app.buffer_idx].is_dirty {
-            dirty_text = "*";
-        }
-        let bar_text = format!("{} {}", dirty_text, &app.buffers[app.buffer_idx].name);
-        let surface = font.render(&bar_text).blended(Color::RGBA(200, 200, 200, 255)).unwrap();
-        let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
-        let TextureQuery { width: w, height: h, .. } = texture.query();
-        let target = rect!(base_x + padding, base_y - bar_height + padding, w, h);
-        canvas.copy(&texture, None, Some(target))?;
 
         canvas.present()
     }
