@@ -51,7 +51,9 @@ impl<'a> Pane<'a> {
         let y = self.y + max(rect.y, 0);
         let w = min(self.w as i32 - rect.x, rect.w);
         let h = min(self.h as i32 - rect.y, rect.h);
-        canvas.fill_rect(rect!(x, y, w, h)).unwrap();
+        if w > 0 && h > 0 {
+            canvas.fill_rect(rect!(x, y, w, h)).unwrap();
+        }
     }
 
     // Draw the given text on the given canvas with the given color.
@@ -174,7 +176,7 @@ fn main() -> Result<(), String> {
                     let pane = &mut app.panes[app.pane_idx];
                     let bar_height: i32 = (pane.line_height + 5 * 2) as i32;
                     let padding = 5;
-                    let mut y_idx = ((y as f64 - pane.y as f64 - padding as f64 - bar_height as f64) / pane.line_height as f64).floor() as usize + pane.scroll_idx;
+                    let mut y_idx = ((f64::from(y) - f64::from(pane.y) - f64::from(padding) - f64::from(bar_height) / f64::from(pane.line_height)).floor()) as usize + pane.scroll_idx;
                     let mut max_x_idx = 0;
                     if let Some(b) = pane.buffer_id {
                         y_idx = min(y_idx, app.buffers[b].contents.len() - 1);
@@ -316,9 +318,9 @@ fn main() -> Result<(), String> {
             // Smooth scrolling
             let target_scroll_offset = pane.scroll_idx as i32 * pane.line_height as i32;
             if pane.scroll_offset < target_scroll_offset {
-                pane.scroll_offset += ((target_scroll_offset - pane.scroll_offset) as f64 / 3.0).ceil() as i32;
+                pane.scroll_offset += (f64::from(target_scroll_offset - pane.scroll_offset) / 3.0).ceil() as i32;
             } else if pane.scroll_offset > target_scroll_offset {
-                pane.scroll_offset += ((target_scroll_offset - pane.scroll_offset) as f64 / 3.0).floor() as i32;
+                pane.scroll_offset += (f64::from(target_scroll_offset - pane.scroll_offset) / 3.0).floor() as i32;
             }
 
             if let Some(b) = pane.buffer_id {
@@ -364,10 +366,11 @@ fn main() -> Result<(), String> {
                 // Draw bar
                 let rect = rect!(0, 0, pane.w, bar_height);
                 pane.fill_rect(&mut canvas, Color::RGBA(50, 50, 50, 255), rect);
-                let mut dirty_text = "";
-                if buffer.is_dirty {
-                    dirty_text = "*";
-                }
+                let dirty_text = if buffer.is_dirty { "*" } else { "" };
+                // let mut dirty_text = "";
+                // if buffer.is_dirty {
+                //     dirty_text = "*";
+                // }
                 let bar_text = format!("{} {}", dirty_text, &buffer.name);
                 pane.draw_text(&mut canvas, Color::RGBA(200, 200, 200, 255), padding, padding, &bar_text);
             }
