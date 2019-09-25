@@ -198,7 +198,7 @@ impl<'a> Pane<'a> {
                     }
                     Keycode::Backspace => {
                         if self.cursor_x > 0 {
-                            if self.cursor_x < buffer.contents[self.cursor_y].len() {
+                            if self.cursor_x <= buffer.contents[self.cursor_y].len() {
                                 buffer.contents[self.cursor_y].remove(self.cursor_x - 1);
                             }
                             self.cursor_x -= 1;
