@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::thread::sleep_ms;
+use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
@@ -67,10 +68,13 @@ impl<'a> Pane<'a> {
     // and text outside the width and height of the rect will be cut off.
     fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) {
         if y > 0 && x > 0 && !text.is_empty() {
+            let now = Instant::now();
             let mut left_bound = 0;
             let mut right_bound = text.len();
 
             let (width, _) = self.font.size_of(text).unwrap();
+            println!("Size query: {:?}", now.elapsed());
+            let now = Instant::now();
 
             // If the text we want to render is wider than the screen, do a binary
             // search to find the largest portion of the string that will fit on
@@ -92,26 +96,40 @@ impl<'a> Pane<'a> {
                 let (width, _) = self.font.size_of(&text[0..seek + 1]).unwrap();
                 right_bound = seek + 1;
             }
+            println!("Line length: {:?}", now.elapsed());
+            let now = Instant::now();
 
             let surface = self
                 .font
                 .render(&text[0..right_bound])
                 .blended(color)
                 .unwrap();
+            println!("Font render: {:?}", now.elapsed());
+            let now = Instant::now();
             let texture_creator = canvas.texture_creator();
+            println!("Texture_creator: {:?}", now.elapsed());
+            let now = Instant::now();
             let texture = texture_creator
                 .create_texture_from_surface(&surface)
                 .unwrap();
+            println!("Surface: {:?}", now.elapsed());
+            let now = Instant::now();
             let TextureQuery {
                 width: w,
                 height: h,
                 ..
             } = texture.query();
+            println!("Query: {:?}", now.elapsed());
+            let now = Instant::now();
             let w = min(self.w as i32 - x, w as i32);
             let h = min(self.h as i32 - y, h as i32);
             let source = rect!(0, 0, w, h);
             let target = rect!(self.x + x, self.y + y, w, h);
+            println!("Vars: {:?}", now.elapsed());
+            let now = Instant::now();
             canvas.copy(&texture, Some(source), Some(target)).unwrap();
+            println!("Canvas copy: {:?}", now.elapsed());
+            let now = Instant::now();
         }
     }
 
@@ -127,11 +145,11 @@ impl<'a> Pane<'a> {
                 let bar_height: i32 = (self.line_height + 5 * 2) as i32;
                 let padding = 5;
                 let mut y_idx = ((f64::from(y)
-                    - f64::from(self.y)
-                    - f64::from(padding)
-                    - f64::from(bar_height))
+                        - f64::from(self.y)
+                        - f64::from(padding)
+                        - f64::from(bar_height))
                     / f64::from(self.line_height))
-                .floor() as usize
+                    .floor() as usize
                     + self.scroll_idx;
                 y_idx = min(y_idx, buffer.contents.len() - 1);
                 let max_x_idx = buffer.contents[y_idx].len();
@@ -333,8 +351,6 @@ fn main() -> Result<(), String> {
     });
     app.panes[app.pane_idx].line_height = app.panes[app.pane_idx].font.height();
 
-    bool dirty = true;
-
     'mainloop: loop {
         for event in sdl_context.event_pump()?.poll_iter() {
             match event {
@@ -377,55 +393,69 @@ fn main() -> Result<(), String> {
                 let first_line = max(
                     0,
                     pane.scroll_idx as i32
-                        - (f64::from(height) / f64::from(pane.line_height)).ceil() as i32,
+                    - (f64::from(height) / f64::from(pane.line_height)).ceil() as i32,
                 ) as usize;
                 let last_line = min(
                     buffer.contents.len(),
                     pane.scroll_idx
-                        + (f64::from(height) / f64::from(pane.line_height)).ceil() as usize,
+                    + (f64::from(height) / f64::from(pane.line_height)).ceil() as usize,
                 );
 
                 let padding: i32 = 5;
                 let bar_height: i32 = (pane.line_height + padding * 2) as i32;
                 // Draw the contents of the file and the cursor.
-                for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate() {
-                    // Right-pad the string to allow the cursor to be rendered off the end of
-                    // the line of text
-                    let mut render_text = entry.clone();
-                    if render_text.len() < pane.cursor_x {
-                        for _ in render_text.len()..pane.cursor_x {
-                            render_text.push(' ');
-                        }
-                    }
-
-                    // Render the full line of text
-                    pane.draw_text(
-                        &mut canvas,
-                        Color::RGBA(40, 0, 0, 255),
-                        padding,
-                        bar_height + padding + (i as i32 + first_line as i32) * pane.line_height
-                            - pane.scroll_offset,
-                        &render_text,
-                    );
-
-                    // Draw the cursor if we're rendering the cursor line
-                    if i == pane.cursor_y {
-                        // If the cursor isn't at the beginning of the line, render the text
-                        // before the cursor so we can measure its width.
-                        let text_right = &render_text[..pane.cursor_x];
-                        let (x, _) = pane.font.size_of(text_right).unwrap();
-                        let rect = rect!(
-                            padding + x as i32,
-                            bar_height
-                                + padding
-                                + (i as i32 + first_line as i32) * pane.line_height
-                                - pane.scroll_offset,
-                            3,
-                            pane.line_height
-                        );
-                        pane.fill_rect(&mut canvas, Color::RGBA(0, 0, 0, 255), rect);
-                    }
+                
+                let mut text_block = String::new();
+                for line in &buffer.contents[first_line..last_line] {
+                    text_block.push_str(&line.clone());
+                    text_block.push('\n');
                 }
+                pane.draw_text(
+                    &mut canvas,
+                    Color::RGBA(40, 0, 0, 255),
+                    padding,
+                    bar_height + padding - pane.scroll_offset,
+                    &text_block,
+                );
+
+                // for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate() {
+                //     // Right-pad the string to allow the cursor to be rendered off the end of
+                //     // the line of text
+                //     // let mut render_text = entry.clone();
+                //     // if render_text.len() < pane.cursor_x {
+                //     //     for _ in render_text.len()..pane.cursor_x {
+                //     //         render_text.push(' ');
+                //     //     }
+                //     // }
+
+                //     // Render the full line of text
+                //     pane.draw_text(
+                //         &mut canvas,
+                //         Color::RGBA(40, 0, 0, 255),
+                //         padding,
+                //         bar_height + padding + (i as i32 + first_line as i32) * pane.line_height
+                //         - pane.scroll_offset,
+                //         &entry,
+                //     );
+
+                //     // Draw the cursor if we're rendering the cursor line
+                //     if i == pane.cursor_y {
+                //         // If the cursor isn't at the beginning of the line, render the text
+                //         // before the cursor so we can measure its width.
+                //         let text_right = &entry[..pane.cursor_x];
+                //         let (x, _) = pane.font.size_of(text_right).unwrap();
+                //         let rect = rect!(
+                //             padding + x as i32,
+                //             bar_height
+                //             + padding
+                //             + (i as i32 + first_line as i32) * pane.line_height
+                //             - pane.scroll_offset,
+                //             3,
+                //             pane.line_height
+                //         );
+                //         pane.fill_rect(&mut canvas, Color::RGBA(0, 0, 0, 255), rect);
+                //     }
+                // }
 
                 // Draw bar
                 let rect = rect!(0, 0, pane.w, bar_height);
@@ -442,7 +472,7 @@ fn main() -> Result<(), String> {
             }
         }
 
-        sleep_ms(15);
+        sleep_ms(1);
         canvas.present()
     }
 
