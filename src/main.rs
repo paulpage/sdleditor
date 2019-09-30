@@ -16,6 +16,9 @@ use sdl2::rect::Rect;
 use sdl2::render::{Texture, TextureQuery, WindowCanvas};
 use sdl2::ttf::{Font};
 
+mod pane;
+use pane::PaneType;
+
 struct Buffer {
     name: String,
     contents: Vec<String>,
@@ -36,6 +39,7 @@ impl PartialEq for FontCacheKey {
 impl Eq for FontCacheKey {}
 
 struct Pane<'a> {
+    pane_type: PaneType,
     x: i32,
     y: i32,
     w: u32,
@@ -68,9 +72,9 @@ impl<'a> Pane<'a> {
         let rect = Rect::new(self.x, self.y, self.w, self.h);
         canvas.fill_rect(rect).unwrap();
     }
-    fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) {
+    fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) -> i32 {
+        let mut length: i32 = 0;
         if y > 0 && x > 0 {
-            let mut length: i32 = 0;
             for c in text.chars() {
                 let key = FontCacheKey {c: c, color: color };
                 let texture = self
@@ -105,19 +109,20 @@ impl<'a> Pane<'a> {
                 canvas.copy(&texture, Some(source), Some(target)).unwrap();
 
                 if length > self.w as i32 {
-                    return;
+                    return self.w as i32;
                 }
                 length += w as i32;
             }
         }
+        length
     }
 
     fn handle_buffer_event(&mut self, buffer: &mut Buffer, event: Event) {
         match event {
             Event::TextInput { text, .. } => {
                 buffer.contents[self.cursor_y].insert_str(self.cursor_x, &text);
-                self.cursor_x += 1;
-                self.max_cursor_x += 1;
+                self.cursor_x += text.len();
+                self.max_cursor_x = self.cursor_x;
                 buffer.is_dirty = true;
             }
             Event::MouseButtonDown { x, y, .. } => {
@@ -233,20 +238,6 @@ impl<'a> Pane<'a> {
                         }
                     }
                     _ => {
-                        if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
-                            match kc {
-                                Keycode::Q => {
-                                    // break 'mainloop;
-                                }
-                                Keycode::S => {
-                                    println!("TODO: Save file");
-                                }
-                                Keycode::O => {
-                                    println!("TODO: Open file");
-                                }
-                                _ => {}
-                            }
-                        }
                     }
                 }
             }
@@ -298,6 +289,7 @@ fn main() {
 
     let (_width, height) = canvas.window().size();
     panes.push(Pane {
+        pane_type: PaneType::Buffer,
         x: 100,
         y: 100,
         w: 400,
@@ -319,6 +311,51 @@ fn main() {
         for event in sdl_context.event_pump().unwrap().poll_iter() {
             match event {
                 Event::Quit { .. } => break 'mainloop,
+                Event::KeyDown {
+                    keycode: Some(kc),
+                    keymod,
+                    ..
+                } => {
+                    if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
+                        match kc {
+                            Keycode::Q => {
+                                // break 'mainloop;
+                            }
+                            Keycode::S => {
+                                println!("TODO: Save file");
+                            }
+                            Keycode::O => {
+                                println!("TODO: Open file");
+                                panes.push(Pane {
+                                    pane_type: PaneType::FileManager,
+                                    x: 120,
+                                    y: 120,
+                                    w: 400,
+                                    h: 400,
+                                    buffer_id: None,
+                                    cursor_x: 0,
+                                    max_cursor_x: 0,
+                                    cursor_y: 0,
+                                    scroll_idx: 0,
+                                    scroll_offset: 0,
+                                    line_height: 0,
+                                    font: ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
+                                    font_cache: HashMap::new(),
+                                });
+                            }
+                            _ => {
+                                if let Some(b) = panes[pane_idx].buffer_id {
+                                    panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
+                                }
+                            }
+                        }
+                    } else {
+                        if let Some(b) = panes[pane_idx].buffer_id {
+                            panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
+                        }
+                    }
+
+		}
                 _ => {
                     if let Some(b) = panes[pane_idx].buffer_id {
                         panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
@@ -370,7 +407,7 @@ fn main() {
                 for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate() {
 
                     // Render the full line of text
-                    pane.draw_text(
+                    let line_width = pane.draw_text(
                         &mut canvas,
                         Color::RGBA(40, 0, 0, 255),
                         padding as i32,
@@ -381,12 +418,8 @@ fn main() {
 
                     // Draw the cursor if we're rendering the cursor line
                     if i == pane.cursor_y {
-                        // If the cursor isn't at the beginning of the line, render the text
-                        // before the cursor so we can measure its width.
-                        let text_right = &entry[..pane.cursor_x];
-                        let (x, _) = pane.font.size_of(text_right).unwrap().clone();
                         let rect = Rect::new(
-                            padding as i32 + x as i32,
+                            padding as i32 + line_width as i32,
                             bar_height as i32
                             + padding as i32
                             + (i as i32 + first_line as i32) * line_height as i32
