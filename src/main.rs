@@ -5,54 +5,21 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::thread::sleep;
-use std::collections::HashMap;
 use std::time::Duration;
-use std::rc::Rc;
 
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::{Texture, TextureQuery, WindowCanvas};
-use sdl2::ttf::{Font};
+use sdl2::render::WindowCanvas;
 
 mod pane;
-use pane::PaneType;
+use pane::{Pane, PaneType};
 
 struct Buffer {
     name: String,
     contents: Vec<String>,
     is_dirty: bool,
-}
-
-#[derive(Hash)]
-struct FontCacheKey {
-    c: char,
-    color: Color,
-}
-
-impl PartialEq for FontCacheKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.c == other.c && self.color == other.color
-    }
-}
-impl Eq for FontCacheKey {}
-
-struct Pane<'a> {
-    pane_type: PaneType,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    buffer_id: Option<usize>,
-    cursor_x: usize,
-    max_cursor_x: usize,
-    cursor_y: usize,
-    scroll_idx: usize,
-    scroll_offset: i32,
-    line_height: i32,
-    font: Font<'a, 'static>,
-    font_cache: HashMap<FontCacheKey, Rc<Texture>>,
 }
 
 fn fill_rect(pane: &mut Pane, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
@@ -66,185 +33,132 @@ fn fill_rect(pane: &mut Pane, canvas: &mut WindowCanvas, color: Color, rect: Rec
     }
 }
 
-impl<'a> Pane<'a> {
+fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
+    match event {
+        Event::TextInput { text, .. } => {
+            buffer.contents[pane.cursor_y].insert_str(pane.cursor_x, &text);
+            pane.cursor_x += text.len();
+            pane.max_cursor_x = pane.cursor_x;
+            buffer.is_dirty = true;
+        }
+        Event::MouseButtonDown { x, y, .. } => {
+            let bar_height: u32 = (pane.line_height + 5 * 2) as u32;
+            let padding = 5;
+            let mut y_idx = ((f64::from(y)
+                              - f64::from(pane.y)
+                              - f64::from(padding)
+                              - f64::from(bar_height))
+                             / f64::from(pane.line_height))
+                .floor() as usize
+                + pane.scroll_idx;
+            y_idx = min(y_idx, buffer.contents.len() - 1);
+            let max_x_idx = buffer.contents[y_idx].len();
 
-    fn draw(&self, canvas: &mut WindowCanvas) {
-        let rect = Rect::new(self.x, self.y, self.w, self.h);
-        canvas.fill_rect(rect).unwrap();
-    }
-    fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) -> i32 {
-        let mut length: i32 = 0;
-        if y > 0 && x > 0 {
-            for c in text.chars() {
-                let key = FontCacheKey {c: c, color: color };
-                let texture = self
-                    .font_cache
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        let surface = self
-                            .font
-                            .render(&c.to_string())
-                            .blended(color)
-                            .unwrap();
-                        let texture = canvas
-                            .texture_creator()
-                            .create_texture_from_surface(&surface)
-                            .unwrap();
-                        let resource = Rc::new(texture);
-                        println!("MISS");
-                        self.font_cache.insert(key, resource.clone());
-                        resource
-                    });
-
-                let TextureQuery {
-                    width: mut w,
-                    height: mut h,
-                    ..
-                } = texture.query();
-                w = min(self.w as i32 - (x as i32 + length as i32), w as i32) as u32;
-                h = min(self.h as i32 - y as i32, h as i32) as u32;
-                let source = Rect::new(0, 0, w as u32, h as u32);
-                let target = Rect::new(self.x + x + length as i32, self.y + y, w as u32, h as u32);
-                canvas.copy(&texture, Some(source), Some(target)).unwrap();
-
-                if length > self.w as i32 {
-                    return self.w as i32;
-                }
-                length += w as i32;
+            pane.cursor_y = y_idx;
+            // Measure the length of each substring of the line until we get one that's
+            // bigger than the x position of the mouse
+            let mut x_idx = 0;
+            let mut char_x = pane.x + padding;
+            let mut last_char_x = char_x;
+            while char_x < x && (x_idx as usize) < max_x_idx + 1 {
+                let (cx, _) = pane.font
+                    .size_of(&buffer.contents[pane.cursor_y][..x_idx])
+                    .unwrap();
+                last_char_x = char_x;
+                char_x = pane.x + padding + cx as i32;
+                x_idx += 1;
+            }
+            // If the mouse is on the right side of the character it's hovering over,
+            // put the cursor on the right
+            if (last_char_x as i32 - x as i32).abs() < (char_x as i32 - x as i32).abs() {
+                x_idx -= 1;
+            }
+            pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
+            pane.max_cursor_x = pane.cursor_x;
+        }
+        Event::MouseWheel { y, .. } => {
+            let candidate = pane.scroll_idx as i32 - (y * 3);
+            if candidate < 0 {
+                pane.scroll_idx = 0;
+            } else if candidate > buffer.contents.len() as i32 {
+                pane.scroll_idx = buffer.contents.len();
+            } else {
+                pane.scroll_idx = candidate as usize;
             }
         }
-        length
-    }
-
-    fn handle_buffer_event(&mut self, buffer: &mut Buffer, event: Event) {
-        match event {
-            Event::TextInput { text, .. } => {
-                buffer.contents[self.cursor_y].insert_str(self.cursor_x, &text);
-                self.cursor_x += text.len();
-                self.max_cursor_x = self.cursor_x;
-                buffer.is_dirty = true;
-            }
-            Event::MouseButtonDown { x, y, .. } => {
-                let bar_height: u32 = (self.line_height + 5 * 2) as u32;
-                let padding = 5;
-                let mut y_idx = ((f64::from(y)
-                        - f64::from(self.y)
-                        - f64::from(padding)
-                        - f64::from(bar_height))
-                    / f64::from(self.line_height))
-                    .floor() as usize
-                    + self.scroll_idx;
-                y_idx = min(y_idx, buffer.contents.len() - 1);
-                let max_x_idx = buffer.contents[y_idx].len();
-
-                self.cursor_y = y_idx;
-                // Measure the length of each substring of the line until we get one that's
-                // bigger than the x position of the mouse
-                let mut x_idx = 0;
-                let mut char_x = self.x + padding;
-                let mut last_char_x = char_x;
-                while char_x < x && (x_idx as usize) < max_x_idx + 1 {
-                    let (cx, _) = self.font
-                        .size_of(&buffer.contents[self.cursor_y][..x_idx])
-                        .unwrap();
-                    last_char_x = char_x;
-                    char_x = self.x + padding + cx as i32;
-                    x_idx += 1;
-                }
-                // If the mouse is on the right side of the character it's hovering over,
-                // put the cursor on the right
-                if (last_char_x as i32 - x as i32).abs() < (char_x as i32 - x as i32).abs() {
-                    x_idx -= 1;
-                }
-                self.cursor_x = max(x_idx as i32 - 1, 0) as usize;
-                self.max_cursor_x = self.cursor_x;
-            }
-            Event::MouseWheel { y, .. } => {
-                let candidate = self.scroll_idx as i32 - (y * 3);
-                if candidate < 0 {
-                    self.scroll_idx = 0;
-                } else if candidate > buffer.contents.len() as i32 {
-                    self.scroll_idx = buffer.contents.len();
-                } else {
-                    self.scroll_idx = candidate as usize;
-                }
-            }
-            Event::KeyDown {
-                keycode: Some(kc),
-                keymod,
-                ..
-            } => {
-                match kc {
-                    Keycode::Up => {
-                        if self.cursor_y > 0 {
-                            self.cursor_y -= 1;
-                            self.cursor_x = max(
-                                min(self.cursor_x, buffer.contents[self.cursor_y].len()),
-                                min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
+        Event::KeyDown {
+            keycode: Some(kc),
+            keymod,
+            ..
+        } => {
+            match kc {
+                Keycode::Up => {
+                    if pane.cursor_y > 0 {
+                        pane.cursor_y -= 1;
+                        pane.cursor_x = max(
+                            min(pane.cursor_x, buffer.contents[pane.cursor_y].len()),
+                            min(pane.max_cursor_x, buffer.contents[pane.cursor_y].len()),
                             );
-                        }
-                    }
-                    Keycode::Down => {
-                        if self.cursor_y < buffer.contents.len() {
-                            self.cursor_y += 1;
-                            self.cursor_x = max(
-                                min(self.cursor_x, buffer.contents[self.cursor_y].len()),
-                                min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
-                            );
-                        }
-                    }
-                    Keycode::Left => {
-                        if self.cursor_x > 0 {
-                            self.cursor_x -= 1;
-                            self.max_cursor_x = self.cursor_x;
-                        }
-                    }
-                    Keycode::Right => {
-                        if self.cursor_x < buffer.contents[self.cursor_y].len() {
-                            self.cursor_x += 1;
-                            self.max_cursor_x = self.cursor_x;
-                        }
-                    }
-                    Keycode::PageUp => {
-                        if self.scroll_idx < 3 {
-                            self.scroll_idx = 0;
-                            self.scroll_offset = 0;
-                        } else {
-                            self.scroll_idx -= 3;
-                        }
-                    }
-                    Keycode::PageDown => {
-                        if self.scroll_idx > buffer.contents.len() - 3 {
-                            self.scroll_idx = buffer.contents.len();
-                        } else {
-                            self.scroll_idx += 3;
-                        }
-                    }
-                    Keycode::Return => {
-                        self.cursor_y += 1;
-                        self.cursor_x = 0;
-                        self.max_cursor_x = self.cursor_x;
-                        buffer.contents.insert(self.cursor_y, String::new());
-                    }
-                    Keycode::Backspace => {
-                        if self.cursor_x > 0 {
-                            if self.cursor_x <= buffer.contents[self.cursor_y].len() {
-                                buffer.contents[self.cursor_y].remove(self.cursor_x - 1);
-                            }
-                            self.cursor_x -= 1;
-                            self.max_cursor_x = self.cursor_x;
-                            buffer.is_dirty = true;
-                        }
-                    }
-                    _ => {
                     }
                 }
+                Keycode::Down => {
+                    if pane.cursor_y < buffer.contents.len() {
+                        pane.cursor_y += 1;
+                        pane.cursor_x = max(
+                            min(pane.cursor_x, buffer.contents[pane.cursor_y].len()),
+                            min(pane.max_cursor_x, buffer.contents[pane.cursor_y].len()),
+                            );
+                    }
+                }
+                Keycode::Left => {
+                    if pane.cursor_x > 0 {
+                        pane.cursor_x -= 1;
+                        pane.max_cursor_x = pane.cursor_x;
+                    }
+                }
+                Keycode::Right => {
+                    if pane.cursor_x < buffer.contents[pane.cursor_y].len() {
+                        pane.cursor_x += 1;
+                        pane.max_cursor_x = pane.cursor_x;
+                    }
+                }
+                Keycode::PageUp => {
+                    if pane.scroll_idx < 3 {
+                        pane.scroll_idx = 0;
+                        pane.scroll_offset = 0;
+                    } else {
+                        pane.scroll_idx -= 3;
+                    }
+                }
+                Keycode::PageDown => {
+                    if pane.scroll_idx > buffer.contents.len() - 3 {
+                        pane.scroll_idx = buffer.contents.len();
+                    } else {
+                        pane.scroll_idx += 3;
+                    }
+                }
+                Keycode::Return => {
+                    pane.cursor_y += 1;
+                    pane.cursor_x = 0;
+                    pane.max_cursor_x = pane.cursor_x;
+                    buffer.contents.insert(pane.cursor_y, String::new());
+                }
+                Keycode::Backspace => {
+                    if pane.cursor_x > 0 {
+                        if pane.cursor_x <= buffer.contents[pane.cursor_y].len() {
+                            buffer.contents[pane.cursor_y].remove(pane.cursor_x - 1);
+                        }
+                        pane.cursor_x -= 1;
+                        pane.max_cursor_x = pane.cursor_x;
+                        buffer.is_dirty = true;
+                    }
+                }
+                _ => {
+                }
             }
-            _ => {}
         }
+        _ => {}
     }
-
 }
 
 fn main() {
@@ -288,23 +202,15 @@ fn main() {
     }
 
     let (_width, height) = canvas.window().size();
-    panes.push(Pane {
-        pane_type: PaneType::Buffer,
-        x: 100,
-        y: 100,
-        w: 400,
-        h: 400,
-        buffer_id: Some(0),
-        cursor_x: 0,
-        max_cursor_x: 0,
-        cursor_y: 0,
-        scroll_idx: 0,
-        scroll_offset: 0,
-        line_height: 0,
-        font: ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-        font_cache: HashMap::new(),
-    });
-    panes[pane_idx].line_height = panes[pane_idx].font.height();
+    panes.push(Pane::new(
+            100,
+            100,
+            400,
+            400,
+            ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
+            PaneType::Buffer,
+            Some(0)));
+    // panes[pane_idx].line_height = panes[pane_idx].font.height();
     // panes[pane_idx].line_height = font_manager.font.height();
 
     'mainloop: loop {
@@ -326,39 +232,31 @@ fn main() {
                             }
                             Keycode::O => {
                                 println!("TODO: Open file");
-                                panes.push(Pane {
-                                    pane_type: PaneType::FileManager,
-                                    x: 120,
-                                    y: 120,
-                                    w: 400,
-                                    h: 400,
-                                    buffer_id: None,
-                                    cursor_x: 0,
-                                    max_cursor_x: 0,
-                                    cursor_y: 0,
-                                    scroll_idx: 0,
-                                    scroll_offset: 0,
-                                    line_height: 0,
-                                    font: ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-                                    font_cache: HashMap::new(),
-                                });
+                                panes.push(Pane::new(
+                                        120,
+                                        120,
+                                        400,
+                                        400,
+                                        ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
+                                        PaneType::FileManager,
+                                        None));
                             }
                             _ => {
                                 if let Some(b) = panes[pane_idx].buffer_id {
-                                    panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
+                                    handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
                                 }
                             }
                         }
                     } else {
                         if let Some(b) = panes[pane_idx].buffer_id {
-                            panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
+                            handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
                         }
                     }
 
 		}
                 _ => {
                     if let Some(b) = panes[pane_idx].buffer_id {
-                        panes[pane_idx].handle_buffer_event(&mut buffers[b], event)
+                        handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
                     }
                 }
             }
@@ -383,7 +281,7 @@ fn main() {
             let scroll_offset = pane.scroll_offset;
 
             if let Some(b) = pane.buffer_id {
-                let buffer = &buffers[b];
+                let buffer: &Buffer = &buffers[b];
                 canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
                 let rect = Rect::new(pane.x, pane.y, pane.w, pane.h);
                 canvas.fill_rect(rect).unwrap();

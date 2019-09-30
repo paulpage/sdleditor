@@ -1,13 +1,115 @@
-use std::cmp::{max, min};
-use sdl2::render::{Texture, TextureQuery, TextureCreator, WindowCanvas};
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::cmp::min;
+use sdl2::render::{Texture, TextureQuery, WindowCanvas};
 use sdl2::ttf::Font;
-use sdl2::video::WindowContext;
 use sdl2::rect::Rect;
-use sdl2::keyboard::{Keycode, Mod};
-use sdl2::event::Event;
 use sdl2::pixels::Color;
 
 pub enum PaneType {
     Buffer,
     FileManager,
 }
+
+#[derive(Hash)]
+struct FontCacheKey {
+    c: char,
+    color: Color,
+}
+
+impl PartialEq for FontCacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.c == other.c && self.color == other.color
+    }
+}
+impl Eq for FontCacheKey {}
+
+
+pub struct Pane<'a> {
+    pub pane_type: PaneType,
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+    pub buffer_id: Option<usize>,
+    pub cursor_x: usize,
+    pub max_cursor_x: usize,
+    pub cursor_y: usize,
+    pub scroll_idx: usize,
+    pub scroll_offset: i32,
+    pub line_height: i32,
+    pub font: Font<'a, 'static>,
+    font_cache: HashMap<FontCacheKey, Rc<Texture>>,
+}
+
+impl<'a> Pane<'a> {
+
+    pub fn new(x: i32, y: i32, w: u32, h: u32, font: Font<'a, 'static>, pane_type: PaneType, buffer_id: Option<usize>) -> Self {
+        Pane {
+            pane_type: pane_type,
+            x: x,
+            y: y,
+            w: w,
+            h: h,
+            buffer_id: buffer_id,
+            cursor_x: 0,
+            cursor_y: 0,
+            max_cursor_x: 0,
+            scroll_idx: 0,
+            scroll_offset: 0,
+            line_height: font.height(),
+            font: font,
+            font_cache: HashMap::new(),
+        }
+    }
+
+    pub fn draw(&self, canvas: &mut WindowCanvas) {
+        let rect = Rect::new(self.x, self.y, self.w, self.h);
+        canvas.fill_rect(rect).unwrap();
+    }
+    pub fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) -> i32 {
+        let mut length: i32 = 0;
+        if y > 0 && x > 0 {
+            for c in text.chars() {
+                let key = FontCacheKey {c: c, color: color };
+                let texture = self
+                    .font_cache
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let surface = self
+                            .font
+                            .render(&c.to_string())
+                            .blended(color)
+                            .unwrap();
+                        let texture = canvas
+                            .texture_creator()
+                            .create_texture_from_surface(&surface)
+                            .unwrap();
+                        let resource = Rc::new(texture);
+                        println!("MISS");
+                        self.font_cache.insert(key, resource.clone());
+                        resource
+                    });
+
+                let TextureQuery {
+                    width: mut w,
+                    height: mut h,
+                    ..
+                } = texture.query();
+                w = min(self.w as i32 - (x as i32 + length as i32), w as i32) as u32;
+                h = min(self.h as i32 - y as i32, h as i32) as u32;
+                let source = Rect::new(0, 0, w as u32, h as u32);
+                let target = Rect::new(self.x + x + length as i32, self.y + y, w as u32, h as u32);
+                canvas.copy(&texture, Some(source), Some(target)).unwrap();
+
+                if length > self.w as i32 {
+                    return self.w as i32;
+                }
+                length += w as i32;
+            }
+        }
+        length
+    }
+}
+
