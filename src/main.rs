@@ -94,8 +94,10 @@ fn main() {
     let video_subsys = sdl_context.video().unwrap();
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
     let window = video_subsys
-        .window("SDL2_TTF Example", 800, 600)
+        .window("SDL2_TTF Example", 0, 0)
         .position_centered()
+        .resizable()
+        .maximized()
         .opengl()
         .build()
         .map_err(|e| e.to_string()).unwrap();
@@ -111,12 +113,12 @@ fn main() {
         _ => buffers.push(Buffer::new()),
     }
 
-    let (_width, height) = canvas.window().size();
+    let (width, height) = canvas.window().size();
     panes.push(Pane::new(
-            100,
-            100,
-            400,
-            400,
+            20,
+            20,
+            max(0, width as i32 - 40) as u32,
+            max(0, height as i32 - 40) as u32,
             ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
             PaneType::Buffer,
             Some(0)));
@@ -171,10 +173,10 @@ fn main() {
             }
         }
 
-        canvas.set_draw_color(Color::RGBA(40, 0, 0, 255));
+        canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
         canvas.clear();
 
-        canvas.set_draw_color(Color::RGBA(100, 100, 30, 255));
+        canvas.set_draw_color(Color::RGBA(20, 20, 20, 255));
 
         for mut pane in &mut panes {
             pane.draw(&mut canvas);
@@ -191,7 +193,7 @@ fn main() {
 
             if let Some(b) = pane.buffer_id {
                 let buffer: &mut Buffer = &mut buffers[b];
-                canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
+                canvas.set_draw_color(Color::RGBA(40, 40, 40, 255));
                 let rect = Rect::new(pane.x, pane.y, pane.w, pane.h);
                 canvas.fill_rect(rect).unwrap();
 
@@ -217,13 +219,13 @@ fn main() {
 
                     let midpoint_width = pane.draw_text(
                         &mut canvas,
-                        Color::RGBA(40, 0, 0, 255),
+                        Color::RGBA(251, 241, 199, 255),
                         padding,
                         bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
                         &entry[0..midpoint]);
                     pane.draw_text(
                         &mut canvas,
-                        Color::RGBA(40, 0, 0, 255),
+                        Color::RGBA(251, 241, 199, 255),
                         padding + midpoint_width,
                         bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset,
                         &entry[midpoint..entry.len()]);
@@ -236,17 +238,17 @@ fn main() {
                             2,
                             line_height as u32
                         );
-                        pane.fill_rect(&mut canvas, Color::RGBA(0, 0, 0, 255), rect);
+                        pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
                     }
 
                     // Draw bar
                     let rect = Rect::new(0, 0, pane.w, bar_height as u32);
-                    pane.fill_rect(&mut canvas, Color::RGBA(50, 50, 50, 255), rect);
+                    pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
                     let dirty_text = if buffer.is_dirty { "*" } else { "" };
                     let bar_text = format!("{} {}", dirty_text, &buffer.name);
                     pane.draw_text(
                         &mut canvas,
-                        Color::RGBA(200, 200, 200, 255),
+                        Color::RGBA(251, 241, 199, 255),
                         padding,
                         padding,
                         &bar_text,
