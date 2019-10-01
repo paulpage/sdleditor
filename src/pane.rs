@@ -177,7 +177,7 @@ impl<'a> Pane<'a> {
         self.scroll_idx = min(buffer.contents.len(), self.scroll_idx + num);
     }
 
-    pub fn break_line(&mut self, mut buffer: &mut Buffer) {
+    pub fn break_line(&mut self, buffer: &mut Buffer) {
         let first_half = buffer.contents[self.cursor_y][0..self.cursor_x].to_string();
         let last_half = buffer.contents[self.cursor_y][self.cursor_x..].to_string();
         buffer.contents[self.cursor_y] = first_half;

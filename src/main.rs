@@ -2,8 +2,6 @@ extern crate sdl2;
 
 use std::cmp::{max, min};
 use std::env;
-use std::fs;
-use std::io::{BufRead, BufReader};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -109,26 +107,8 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     match args.len() {
-        2 => {
-            buffers.push(Buffer {
-                contents: Vec::new(),
-                name: args[1].clone(),
-                is_dirty: false,
-            });
-            let file = fs::File::open(&args[1]).unwrap();
-            let reader = BufReader::new(file);
-            for line in reader.lines() {
-                buffers[buffer_idx].contents.push(line.unwrap());
-            }
-        }
-        _ => {
-            buffers.push(Buffer {
-                contents: Vec::new(),
-                name: "UNNAMED".to_string(),
-                is_dirty: false,
-            });
-            buffers[buffer_idx].contents.push(String::new());
-        }
+        2 => buffers.push(Buffer::from_path(args[1].to_string())),
+        _ => buffers.push(Buffer::new()),
     }
 
     let (_width, height) = canvas.window().size();
@@ -241,7 +221,7 @@ fn main() {
                         padding,
                         bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
                         &entry[0..midpoint]);
-                    let line_width = midpoint_width + pane.draw_text(
+                    pane.draw_text(
                         &mut canvas,
                         Color::RGBA(40, 0, 0, 255),
                         padding + midpoint_width,
