@@ -19,7 +19,7 @@ use pane::{Pane, PaneType};
 mod buffer;
 use buffer::{Buffer};
 
-fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
+fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
     match event {
         Event::TextInput { text, .. } => {
             buffer.contents[pane.cursor_y].insert_str(pane.cursor_x, &text);
@@ -82,32 +82,9 @@ fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
                 Keycode::Right => pane.cursor_right(1, &buffer),
                 Keycode::PageUp => pane.scroll_up(3),
                 Keycode::PageDown => pane.scroll_down(3, &buffer),
-                Keycode::Return => {
-                    let first_half = buffer.contents[pane.cursor_y][0..pane.cursor_x].to_string();
-                    let last_half = buffer.contents[pane.cursor_y][pane.cursor_x..].to_string();
-                    buffer.contents[pane.cursor_y] = first_half;
-                    pane.cursor_y += 1;
-                    pane.cursor_x = 0;
-                    pane.max_cursor_x = pane.cursor_x;
-                    buffer.contents.insert(pane.cursor_y, last_half);
-                }
-                Keycode::Backspace => {
-                    if pane.cursor_x > 0 {
-                        if pane.cursor_x <= buffer.contents[pane.cursor_y].len() {
-                            buffer.contents[pane.cursor_y].remove(pane.cursor_x - 1);
-                        }
-                        pane.cursor_x -= 1;
-                        pane.max_cursor_x = pane.cursor_x;
-                        buffer.is_dirty = true;
-                    } else {
-                        let this_line = buffer.contents.remove(pane.cursor_y);
-                        pane.cursor_y -= 1;
-                        pane.cursor_x = buffer.contents[pane.cursor_y].len();
-                        buffer.contents[pane.cursor_y].push_str(&this_line);
-                    }
-                }
-                _ => {
-                }
+                Keycode::Return => pane.break_line(&mut buffer),
+                Keycode::Backspace => pane.remove_char(&mut buffer),
+                _ => {}
             }
         }
         _ => {}
@@ -179,7 +156,9 @@ fn main() {
                                 break 'mainloop;
                             }
                             Keycode::S => {
-                                println!("TODO: Save file");
+                                if let Some(b) = panes[pane_idx].buffer_id {
+                                    buffers[b].save();
+                                }
                             }
                             Keycode::O => {
                                 println!("TODO: Open file");
@@ -203,8 +182,7 @@ fn main() {
                             handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
                         }
                     }
-
-		}
+                }
                 _ => {
                     if let Some(b) = panes[pane_idx].buffer_id {
                         handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
@@ -232,7 +210,7 @@ fn main() {
             let scroll_offset = pane.scroll_offset;
 
             if let Some(b) = pane.buffer_id {
-                let buffer: &Buffer = &buffers[b];
+                let buffer: &mut Buffer = &mut buffers[b];
                 canvas.set_draw_color(Color::RGBA(150, 0, 150, 255));
                 let rect = Rect::new(pane.x, pane.y, pane.w, pane.h);
                 canvas.fill_rect(rect).unwrap();
@@ -272,7 +250,6 @@ fn main() {
 
                     // Draw the cursor if we're rendering the cursor line
                     if first_line + i == pane.cursor_y {
-                        let mut length = 0;
                         let rect = Rect::new(
                             padding + midpoint_width as i32,
                             bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,

@@ -146,10 +146,12 @@ impl<'a> Pane<'a> {
         if self.cursor_x as i32 - num as i32 >= 0 {
             self.cursor_x = (self.cursor_x as i32 - num as i32) as usize;
         } else {
-            let remainder = ((self.cursor_x as i32 - num as i32).abs() - 1) as usize;
-            self.cursor_up(1, buffer);
-            self.cursor_x = buffer.contents[self.cursor_y].len();
-            self.cursor_left(remainder, buffer);
+            if self.cursor_y > 0 {
+                let remainder = ((self.cursor_x as i32 - num as i32).abs() - 1) as usize;
+                self.cursor_up(1, buffer);
+                self.cursor_x = buffer.contents[self.cursor_y].len();
+                self.cursor_left(remainder, buffer);
+            }
         }
         self.max_cursor_x = self.cursor_x;
     }
@@ -158,10 +160,12 @@ impl<'a> Pane<'a> {
         if self.cursor_x + num <= buffer.contents[self.cursor_y].len() {
             self.cursor_x += num;
         } else {
-            let remainder = (((self.cursor_x + num) as i32 - buffer.contents[self.cursor_y].len() as i32).abs() - 1) as usize;
-            self.cursor_down(1, buffer);
-            self.cursor_x = 0;
-            self.cursor_right(remainder, buffer);
+            if self.cursor_y < buffer.contents.len() - 1 {
+                let remainder = (((self.cursor_x + num) as i32 - buffer.contents[self.cursor_y].len() as i32).abs() - 1) as usize;
+                self.cursor_down(1, buffer);
+                self.cursor_x = 0;
+                self.cursor_right(remainder, buffer);
+            }
         }
     }
 
@@ -171,6 +175,34 @@ impl<'a> Pane<'a> {
 
     pub fn scroll_down(&mut self, num: usize, buffer: &Buffer) {
         self.scroll_idx = min(buffer.contents.len(), self.scroll_idx + num);
+    }
+
+    pub fn break_line(&mut self, mut buffer: &mut Buffer) {
+        let first_half = buffer.contents[self.cursor_y][0..self.cursor_x].to_string();
+        let last_half = buffer.contents[self.cursor_y][self.cursor_x..].to_string();
+        buffer.contents[self.cursor_y] = first_half;
+        self.cursor_y += 1;
+        self.cursor_x = 0;
+        self.max_cursor_x = self.cursor_x;
+        buffer.contents.insert(self.cursor_y, last_half);
+    }
+
+    pub fn remove_char(&mut self, mut buffer: &mut Buffer) {
+        if self.cursor_x > 0 {
+            if self.cursor_x <= buffer.contents[self.cursor_y].len() {
+                buffer.contents[self.cursor_y].remove(self.cursor_x - 1);
+            }
+            self.cursor_x -= 1;
+            self.max_cursor_x = self.cursor_x;
+            buffer.is_dirty = true;
+        } else {
+            if self.cursor_y > 0 {
+                let this_line = buffer.contents.remove(self.cursor_y);
+                self.cursor_y -= 1;
+                self.cursor_x = buffer.contents[self.cursor_y].len();
+                buffer.contents[self.cursor_y].push_str(&this_line);
+            }
+        }
     }
 }
 
