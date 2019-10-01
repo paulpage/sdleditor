@@ -16,22 +16,8 @@ use sdl2::render::WindowCanvas;
 mod pane;
 use pane::{Pane, PaneType};
 
-struct Buffer {
-    name: String,
-    contents: Vec<String>,
-    is_dirty: bool,
-}
-
-fn fill_rect(pane: &mut Pane, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
-    canvas.set_draw_color(color);
-    let x = pane.x + max(rect.x, 0);
-    let y = pane.y + max(rect.y, 0);
-    let w = min(pane.w as i32 - rect.x, rect.w) as u32;
-    let h = min(pane.h as i32 - rect.y, rect.h) as u32;
-    if w > 0 && h > 0 {
-        canvas.fill_rect(Rect::new(x, y, w, h as u32)).unwrap();
-    }
-}
+mod buffer;
+use buffer::{Buffer};
 
 fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
     match event {
@@ -44,35 +30,33 @@ fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
         Event::MouseButtonDown { x, y, .. } => {
             let bar_height: u32 = (pane.line_height + 5 * 2) as u32;
             let padding = 5;
-            let mut y_idx = ((f64::from(y)
+            let mut y_idx = max(((f64::from(y)
                               - f64::from(pane.y)
                               - f64::from(padding)
                               - f64::from(bar_height))
                              / f64::from(pane.line_height))
-                .floor() as usize
+                .floor() as i32, 0) as usize
                 + pane.scroll_idx;
             y_idx = min(y_idx, buffer.contents.len() - 1);
             let max_x_idx = buffer.contents[y_idx].len();
 
             pane.cursor_y = y_idx;
-            // Measure the length of each substring of the line until we get one that's
-            // bigger than the x position of the mouse
+
+            let mut length = pane.x + padding;
             let mut x_idx = 0;
-            let mut char_x = pane.x + padding;
-            let mut last_char_x = char_x;
-            while char_x < x && (x_idx as usize) < max_x_idx + 1 {
-                let (cx, _) = pane.font
-                    .size_of(&buffer.contents[pane.cursor_y][..x_idx])
+            let mut last_length = length;
+            while length < x && (x_idx as usize) < max_x_idx {
+                last_length = length;
+                let (char_x, _) =  pane.font
+                    .size_of(&buffer.contents[pane.cursor_y].chars().nth(x_idx).unwrap().to_string())
                     .unwrap();
-                last_char_x = char_x;
-                char_x = pane.x + padding + cx as i32;
+                length += char_x as i32;
                 x_idx += 1;
             }
-            // If the mouse is on the right side of the character it's hovering over,
-            // put the cursor on the right
-            if (last_char_x as i32 - x as i32).abs() < (char_x as i32 - x as i32).abs() {
-                x_idx -= 1;
+            if (last_length as i32 - x as i32).abs() > (length as i32 - x as i32).abs() {
+                x_idx += 1;
             }
+
             pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
             pane.max_cursor_x = pane.cursor_x;
         }
@@ -92,36 +76,10 @@ fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
             ..
         } => {
             match kc {
-                Keycode::Up => {
-                    if pane.cursor_y > 0 {
-                        pane.cursor_y -= 1;
-                        pane.cursor_x = max(
-                            min(pane.cursor_x, buffer.contents[pane.cursor_y].len()),
-                            min(pane.max_cursor_x, buffer.contents[pane.cursor_y].len()),
-                            );
-                    }
-                }
-                Keycode::Down => {
-                    if pane.cursor_y < buffer.contents.len() {
-                        pane.cursor_y += 1;
-                        pane.cursor_x = max(
-                            min(pane.cursor_x, buffer.contents[pane.cursor_y].len()),
-                            min(pane.max_cursor_x, buffer.contents[pane.cursor_y].len()),
-                            );
-                    }
-                }
-                Keycode::Left => {
-                    if pane.cursor_x > 0 {
-                        pane.cursor_x -= 1;
-                        pane.max_cursor_x = pane.cursor_x;
-                    }
-                }
-                Keycode::Right => {
-                    if pane.cursor_x < buffer.contents[pane.cursor_y].len() {
-                        pane.cursor_x += 1;
-                        pane.max_cursor_x = pane.cursor_x;
-                    }
-                }
+                Keycode::Up => pane.cursor_up(1, &buffer),
+                Keycode::Down => pane.cursor_down(1, &buffer),
+                Keycode::Left => pane.cursor_left(1, &buffer),
+                Keycode::Right => pane.cursor_right(1, &buffer),
                 Keycode::PageUp => {
                     if pane.scroll_idx < 3 {
                         pane.scroll_idx = 0;
@@ -225,7 +183,7 @@ fn main() {
                     if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
                         match kc {
                             Keycode::Q => {
-                                // break 'mainloop;
+                                break 'mainloop;
                             }
                             Keycode::S => {
                                 println!("TODO: Save file");
@@ -298,46 +256,59 @@ fn main() {
                     + (f64::from(height) / f64::from(line_height)).ceil() as usize,
                 );
 
-                let padding: u32 = 5;
-                let bar_height: u32 = line_height as u32 + padding * 2;
+                let padding: i32 = 5;
+                let bar_height: i32 = line_height as i32 + padding * 2;
                 // Draw the contents of the file and the cursor.
 
                 for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate() {
 
-                    // Render the full line of text
-                    let line_width = pane.draw_text(
+                    let midpoint = min(pane.cursor_x, entry.len());
+
+                    let midpoint_width = pane.draw_text(
                         &mut canvas,
                         Color::RGBA(40, 0, 0, 255),
-                        padding as i32,
-                        bar_height as i32 + padding as i32 + (i as i32 + first_line as i32) * line_height as i32
-                        - scroll_offset,
-                        &entry,
-                    );
+                        padding,
+                        bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                        &entry[0..midpoint]);
+                    let line_width = midpoint_width + pane.draw_text(
+                        &mut canvas,
+                        Color::RGBA(40, 0, 0, 255),
+                        padding + midpoint_width,
+                        bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                        &entry[midpoint..entry.len()]);
+
+                    // Render the full line of text
+                    // let line_width = pane.draw_text(
+                    //     &mut canvas,
+                    //     Color::RGBA(40, 0, 0, 255),
+                    //     padding,
+                    //     bar_height + padding + (i as i32 + first_line as i32) * line_height as i32
+                    //     - scroll_offset,
+                    //     &entry,
+                    // );
 
                     // Draw the cursor if we're rendering the cursor line
-                    if i == pane.cursor_y {
+                    if first_line + i == pane.cursor_y {
+                        let mut length = 0;
                         let rect = Rect::new(
-                            padding as i32 + line_width as i32,
-                            bar_height as i32
-                            + padding as i32
-                            + (i as i32 + first_line as i32) * line_height as i32
-                            - scroll_offset as i32,
-                            3,
+                            padding + midpoint_width as i32,
+                            bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,
+                            2,
                             line_height as u32
                         );
-                        fill_rect(&mut pane, &mut canvas, Color::RGBA(0, 0, 0, 255), rect);
+                        pane.fill_rect(&mut canvas, Color::RGBA(0, 0, 0, 255), rect);
                     }
 
                     // Draw bar
-                    let rect = Rect::new(0, 0, pane.w, bar_height);
-                    fill_rect(&mut pane, &mut canvas, Color::RGBA(50, 50, 50, 255), rect);
+                    let rect = Rect::new(0, 0, pane.w, bar_height as u32);
+                    pane.fill_rect(&mut canvas, Color::RGBA(50, 50, 50, 255), rect);
                     let dirty_text = if buffer.is_dirty { "*" } else { "" };
                     let bar_text = format!("{} {}", dirty_text, &buffer.name);
                     pane.draw_text(
                         &mut canvas,
                         Color::RGBA(200, 200, 200, 255),
-                        padding as i32,
-                        padding as i32,
+                        padding,
+                        padding,
                         &bar_text,
                     );
                 }
