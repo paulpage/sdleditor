@@ -164,5 +164,13 @@ impl<'a> Pane<'a> {
             self.cursor_right(remainder, buffer);
         }
     }
+
+    pub fn scroll_up(&mut self, num: usize) {
+        self.scroll_idx = max(0, self.scroll_idx as i32 - num as i32) as usize;
+    }
+
+    pub fn scroll_down(&mut self, num: usize, buffer: &Buffer) {
+        self.scroll_idx = min(buffer.contents.len(), self.scroll_idx + num);
+    }
 }
 

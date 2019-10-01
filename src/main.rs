@@ -80,26 +80,16 @@ fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
                 Keycode::Down => pane.cursor_down(1, &buffer),
                 Keycode::Left => pane.cursor_left(1, &buffer),
                 Keycode::Right => pane.cursor_right(1, &buffer),
-                Keycode::PageUp => {
-                    if pane.scroll_idx < 3 {
-                        pane.scroll_idx = 0;
-                        pane.scroll_offset = 0;
-                    } else {
-                        pane.scroll_idx -= 3;
-                    }
-                }
-                Keycode::PageDown => {
-                    if pane.scroll_idx > buffer.contents.len() - 3 {
-                        pane.scroll_idx = buffer.contents.len();
-                    } else {
-                        pane.scroll_idx += 3;
-                    }
-                }
+                Keycode::PageUp => pane.scroll_up(3),
+                Keycode::PageDown => pane.scroll_down(3, &buffer),
                 Keycode::Return => {
+                    let first_half = buffer.contents[pane.cursor_y][0..pane.cursor_x].to_string();
+                    let last_half = buffer.contents[pane.cursor_y][pane.cursor_x..].to_string();
+                    buffer.contents[pane.cursor_y] = first_half;
                     pane.cursor_y += 1;
                     pane.cursor_x = 0;
                     pane.max_cursor_x = pane.cursor_x;
-                    buffer.contents.insert(pane.cursor_y, String::new());
+                    buffer.contents.insert(pane.cursor_y, last_half);
                 }
                 Keycode::Backspace => {
                     if pane.cursor_x > 0 {
@@ -109,6 +99,11 @@ fn handle_buffer_event(pane: &mut Pane, buffer: &mut Buffer, event: Event) {
                         pane.cursor_x -= 1;
                         pane.max_cursor_x = pane.cursor_x;
                         buffer.is_dirty = true;
+                    } else {
+                        let this_line = buffer.contents.remove(pane.cursor_y);
+                        pane.cursor_y -= 1;
+                        pane.cursor_x = buffer.contents[pane.cursor_y].len();
+                        buffer.contents[pane.cursor_y].push_str(&this_line);
                     }
                 }
                 _ => {
@@ -168,8 +163,6 @@ fn main() {
             ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
             PaneType::Buffer,
             Some(0)));
-    // panes[pane_idx].line_height = panes[pane_idx].font.height();
-    // panes[pane_idx].line_height = font_manager.font.height();
 
     'mainloop: loop {
         for event in sdl_context.event_pump().unwrap().poll_iter() {
@@ -274,18 +267,8 @@ fn main() {
                         &mut canvas,
                         Color::RGBA(40, 0, 0, 255),
                         padding + midpoint_width,
-                        bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                        bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset,
                         &entry[midpoint..entry.len()]);
-
-                    // Render the full line of text
-                    // let line_width = pane.draw_text(
-                    //     &mut canvas,
-                    //     Color::RGBA(40, 0, 0, 255),
-                    //     padding,
-                    //     bar_height + padding + (i as i32 + first_line as i32) * line_height as i32
-                    //     - scroll_offset,
-                    //     &entry,
-                    // );
 
                     // Draw the cursor if we're rendering the cursor line
                     if first_line + i == pane.cursor_y {
