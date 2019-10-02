@@ -42,6 +42,10 @@ pub struct Pane<'a> {
     pub scroll_offset: i32,
     pub line_height: i32,
     pub font: Font<'a, 'static>,
+    pub sel_x1: usize,
+    pub sel_y1: usize,
+    pub sel_x2: usize,
+    pub sel_y2: usize,
     font_cache: HashMap<FontCacheKey, Rc<Texture>>,
 }
 
@@ -63,6 +67,10 @@ impl<'a> Pane<'a> {
             line_height: font.height(),
             font: font,
             font_cache: HashMap::new(),
+            sel_x1: 0,
+            sel_y1: 0,
+            sel_x2: 0,
+            sel_y2: 0,
         }
     }
 
@@ -126,47 +134,55 @@ impl<'a> Pane<'a> {
         length
     }
 
-    pub fn cursor_up(&mut self, num: usize, buffer: &Buffer) {
+    pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
+        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         self.cursor_y = max(0, self.cursor_y as i32 - num as i32) as usize;
         self.cursor_x = max(
             min(self.cursor_x, buffer.contents[self.cursor_y].len()),
             min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
         );
+        self.set_selection(old_x, old_y, extend_selection);
     }
 
-    pub fn cursor_down(&mut self, num: usize, buffer: &Buffer) {
+    pub fn cursor_down(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
+        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         self.cursor_y = min(buffer.contents.len() - 1, self.cursor_y + num);
         self.cursor_x = max(
             min(self.cursor_x, buffer.contents[self.cursor_y].len()),
             min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
         );
+        self.set_selection(old_x, old_y, extend_selection);
     }
 
-    pub fn cursor_left(&mut self, num: usize, buffer: &Buffer) {
+    pub fn cursor_left(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
+        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         if self.cursor_x as i32 - num as i32 >= 0 {
             self.cursor_x = (self.cursor_x as i32 - num as i32) as usize;
         } else {
             if self.cursor_y > 0 {
                 let remainder = ((self.cursor_x as i32 - num as i32).abs() - 1) as usize;
-                self.cursor_up(1, buffer);
+                self.cursor_up(1, buffer, extend_selection);
                 self.cursor_x = buffer.contents[self.cursor_y].len();
-                self.cursor_left(remainder, buffer);
+                self.cursor_left(remainder, buffer, extend_selection);
             }
         }
         self.max_cursor_x = self.cursor_x;
+        self.set_selection(old_x, old_y, extend_selection);
     }
 
-    pub fn cursor_right(&mut self, num: usize, buffer: &Buffer) {
+    pub fn cursor_right(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
+        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         if self.cursor_x + num <= buffer.contents[self.cursor_y].len() {
             self.cursor_x += num;
         } else {
             if self.cursor_y < buffer.contents.len() - 1 {
                 let remainder = (((self.cursor_x + num) as i32 - buffer.contents[self.cursor_y].len() as i32).abs() - 1) as usize;
-                self.cursor_down(1, buffer);
+                self.cursor_down(1, buffer, extend_selection);
                 self.cursor_x = 0;
-                self.cursor_right(remainder, buffer);
+                self.cursor_right(remainder, buffer, extend_selection);
             }
         }
+        self.set_selection(old_x, old_y, extend_selection);
     }
 
     pub fn scroll_up(&mut self, num: usize) {
@@ -202,6 +218,32 @@ impl<'a> Pane<'a> {
                 self.cursor_x = buffer.contents[self.cursor_y].len();
                 buffer.contents[self.cursor_y].push_str(&this_line);
             }
+        }
+    }
+
+    pub fn text_length(&self, text: &str) -> u32 {
+        let mut length = 0;
+        for c in text.chars() {
+            let (x, _) = self.font.size_of_char(c).unwrap();
+            length += x;
+        }
+        length
+    }
+
+    fn set_selection(&mut self, old_x: usize, old_y: usize, extend_selection: bool) {
+        if extend_selection {
+            if old_x == self.sel_x1 && old_y == self.sel_y1 {
+                self.sel_x1 = self.cursor_x;
+                self.sel_y1 = self.cursor_y;
+            } else {
+                self.sel_x2 = self.cursor_x;
+                self.sel_y2 = self.cursor_y;
+            }
+        } else {
+            self.sel_x1 = self.cursor_x;
+            self.sel_x2 = self.cursor_x;
+            self.sel_y1 = self.cursor_y;
+            self.sel_y2 = self.cursor_y;
         }
     }
 }

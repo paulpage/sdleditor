@@ -1,10 +1,22 @@
 use std::fs::OpenOptions;
-use std::io::{BufReader, BufRead, BufWriter, Write};
+use std::io::{self, BufReader, BufRead, BufWriter, Write};
 
 pub struct Buffer {
     pub name: String,
     pub contents: Vec<String>,
     pub is_dirty: bool,
+}
+
+enum ActionType {
+    Insert,
+    Delete,
+}
+
+struct Action {
+    action_type: ActionType,
+    text: String,
+    x: usize,
+    y: usize,
 }
 
 impl Buffer {
@@ -57,4 +69,29 @@ impl Buffer {
         self.is_dirty = false;
     }
 
+    pub fn print(&self) {
+        let f = io::stdout();
+        let mut f = BufWriter::new(f.lock());
+        for line in &self.contents {
+            writeln!(&mut f, "{}", line).unwrap();
+        }
+        f.flush().unwrap();
+    }
+
+    pub fn insert(&mut self, x: usize, y: usize, contents: &str) {
+        self.contents[y].insert_str(x, contents);
+    }
+
+    // TODO: probably doesn't work
+    pub fn delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
+        if y1 == y2 {
+            self.contents[y1].replace_range(x1..x2, "");
+        } else if y1 > y2 {
+            self.contents[y2].replace_range(..x2, "");
+            for _ in y1+1..y2 {
+                self.contents.remove(y1+1);
+            }
+            self.contents[y1].replace_range(x1.., "");
+        }
+    }
 }

@@ -5,7 +5,7 @@ use std::env;
 use std::thread::sleep;
 use std::time::Duration;
 
-use sdl2::event::Event;
+use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -19,6 +19,15 @@ use buffer::{Buffer};
 
 fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
     match event {
+        Event::Window { win_event, .. } => {
+            match win_event {
+                WindowEvent::Resized(w, h) => {
+                    pane.w = max(0, w - 40) as u32;
+                    pane.h = max(0, h - 40) as u32;
+                }
+                _ => {}
+            }
+        }
         Event::TextInput { text, .. } => {
             buffer.contents[pane.cursor_y].insert_str(pane.cursor_x, &text);
             pane.cursor_x += text.len();
@@ -58,6 +67,10 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
             pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
             pane.max_cursor_x = pane.cursor_x;
         }
+        Event::MultiGesture { x, y, .. } => {
+            println!("{}, {}", x, y);
+            pane.scroll_offset += y as i32;
+        }
         Event::MouseWheel { y, .. } => {
             let candidate = pane.scroll_idx as i32 - (y * 3);
             if candidate < 0 {
@@ -68,21 +81,34 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
                 pane.scroll_idx = candidate as usize;
             }
         }
+        Event::MultiGesture {x, y, ..} => {
+            println!("{}{}", x, y);
+        }
         Event::KeyDown {
             keycode: Some(kc),
             keymod,
             ..
         } => {
-            match kc {
-                Keycode::Up => pane.cursor_up(1, &buffer),
-                Keycode::Down => pane.cursor_down(1, &buffer),
-                Keycode::Left => pane.cursor_left(1, &buffer),
-                Keycode::Right => pane.cursor_right(1, &buffer),
-                Keycode::PageUp => pane.scroll_up(3),
-                Keycode::PageDown => pane.scroll_down(3, &buffer),
-                Keycode::Return => pane.break_line(&mut buffer),
-                Keycode::Backspace => pane.remove_char(&mut buffer),
-                _ => {}
+            if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
+                match kc {
+                    Keycode::Up => pane.cursor_up(1, &buffer, true),
+                    Keycode::Down => pane.cursor_down(1, &buffer, true),
+                    Keycode::Left => pane.cursor_left(1, &buffer, true),
+                    Keycode::Right => pane.cursor_right(1, &buffer, true),
+                    _ => {}
+                }
+            } else {
+                match kc {
+                    Keycode::Up => pane.cursor_up(1, &buffer, false),
+                    Keycode::Down => pane.cursor_down(1, &buffer, false),
+                    Keycode::Left => pane.cursor_left(1, &buffer, false),
+                    Keycode::Right => pane.cursor_right(1, &buffer, false),
+                    Keycode::PageUp => pane.scroll_up(3),
+                    Keycode::PageDown => pane.scroll_down(3, &buffer),
+                    Keycode::Return => pane.break_line(&mut buffer),
+                    Keycode::Backspace => pane.remove_char(&mut buffer),
+                    _ => {}
+                }
             }
         }
         _ => {}
@@ -94,7 +120,7 @@ fn main() {
     let video_subsys = sdl_context.video().unwrap();
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
     let window = video_subsys
-        .window("SDL2_TTF Example", 0, 0)
+        .window("SDL2_TTF Example", 800, 600)
         .position_centered()
         .resizable()
         .maximized()
@@ -133,29 +159,39 @@ fn main() {
                     ..
                 } => {
                     if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
-                        match kc {
-                            Keycode::Q => {
-                                break 'mainloop;
-                            }
-                            Keycode::S => {
-                                if let Some(b) = panes[pane_idx].buffer_id {
-                                    buffers[b].save();
+                        if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
+                            match kc {
+                                Keycode::Backslash => {
+                                    if let Some(b) = panes[pane_idx].buffer_id {
+                                        buffers[b].print();
+                                        break 'mainloop;
+                                    }
                                 }
+                                _ => {}
                             }
-                            Keycode::O => {
-                                println!("TODO: Open file");
-                                panes.push(Pane::new(
-                                        120,
-                                        120,
-                                        400,
-                                        400,
-                                        ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-                                        PaneType::FileManager,
-                                        None));
-                            }
-                            _ => {
-                                if let Some(b) = panes[pane_idx].buffer_id {
-                                    handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
+                        } else {
+                            match kc {
+                                Keycode::Q => break 'mainloop,
+                                Keycode::S => {
+                                    if let Some(b) = panes[pane_idx].buffer_id {
+                                        buffers[b].save();
+                                    }
+                                }
+                                Keycode::O => {
+                                    println!("TODO: Open file");
+                                    panes.push(Pane::new(
+                                            120,
+                                            120,
+                                            400,
+                                            400,
+                                            ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
+                                            PaneType::FileManager,
+                                            None));
+                                }
+                                _ => {
+                                    if let Some(b) = panes[pane_idx].buffer_id {
+                                        handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
+                                    }
                                 }
                             }
                         }
@@ -173,6 +209,7 @@ fn main() {
             }
         }
 
+        let (width, height) = canvas.window().size();
         canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
         canvas.clear();
 
@@ -223,12 +260,45 @@ fn main() {
                         padding,
                         bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
                         &entry[0..midpoint]);
-                    pane.draw_text(
+                    let text_length = pane.draw_text(
                         &mut canvas,
                         Color::RGBA(251, 241, 199, 255),
                         padding + midpoint_width,
                         bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset,
                         &entry[midpoint..entry.len()]);
+
+                    // Draw the selection
+                    let mut x1: u32 = 0;
+                    let mut x2: u32 = text_length as u32;
+                    if first_line + i == pane.sel_y1 {
+                        if buffer.contents[pane.cursor_y].len() > 0 {
+                            x1 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_x1]);
+                        }
+                        if pane.sel_y1 == pane.sel_y2 {
+                            x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_x2]) as u32;
+                        }
+                        let rect = Rect::new(
+                            x1 as i32,
+                            bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,
+                            (x2 - x1) as u32,
+                            line_height as u32);
+                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect)
+                    } else if first_line + i == pane.sel_y2 {
+                        x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_y2]);
+                        let rect = Rect::new(
+                            padding,
+                            bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                            text_length as u32,
+                            line_height as u32);
+                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect);
+                    } else if first_line + i > pane.sel_y1 && first_line < pane.sel_y2 {
+                        let rect = Rect::new(
+                            padding,
+                            bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                            text_length as u32,
+                            line_height as u32);
+                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect);
+                    }
 
                     // Draw the cursor if we're rendering the cursor line
                     if first_line + i == pane.cursor_y {
