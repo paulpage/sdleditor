@@ -232,7 +232,13 @@ impl<'a> Pane<'a> {
 
     fn set_selection(&mut self, old_x: usize, old_y: usize, extend_selection: bool) {
         if extend_selection {
-            if old_x == self.sel_x1 && old_y == self.sel_y1 {
+            if self.cursor_x >= self.sel_x2 && self.cursor_y >= self.sel_y2 {
+                self.sel_x2 = self.cursor_x;
+                self.sel_y2 = self.cursor_y;
+            } else if self.cursor_x >= self.sel_x1 && self.cursor_y >= self.sel_y2 {
+                self.sel_x1 = self.cursor_x;
+                self.sel_y1 = self.cursor_y;
+            } else if old_x == self.sel_x1 && old_y == self.sel_y1 {
                 self.sel_x1 = self.cursor_x;
                 self.sel_y1 = self.cursor_y;
             } else {
@@ -245,6 +251,7 @@ impl<'a> Pane<'a> {
             self.sel_y1 = self.cursor_y;
             self.sel_y2 = self.cursor_y;
         }
+        println!("{} {} [{} {} to {} {}]", self.cursor_x, self.cursor_y, self.sel_x1, self.sel_y1, self.sel_x2, self.sel_y2);
     }
 }
 

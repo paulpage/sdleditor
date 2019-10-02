@@ -278,20 +278,22 @@ fn main() {
                             x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_x2]) as u32;
                         }
                         let rect = Rect::new(
-                            x1 as i32,
+                            padding as i32 + x1 as i32,
                             bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,
                             (x2 - x1) as u32,
                             line_height as u32);
                         pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect)
                     } else if first_line + i == pane.sel_y2 {
-                        x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_y2]);
+                        if buffer.contents[pane.sel_y2].len() > 0 {
+                            x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_y2]);
+                        }
                         let rect = Rect::new(
                             padding,
                             bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
                             text_length as u32,
                             line_height as u32);
                         pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect);
-                    } else if first_line + i > pane.sel_y1 && first_line < pane.sel_y2 {
+                    } else if first_line + i > pane.sel_y1 && first_line + i < pane.sel_y2 {
                         let rect = Rect::new(
                             padding,
                             bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
