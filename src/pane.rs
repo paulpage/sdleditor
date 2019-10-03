@@ -42,10 +42,8 @@ pub struct Pane<'a> {
     pub scroll_offset: i32,
     pub line_height: i32,
     pub font: Font<'a, 'static>,
-    pub sel_x1: usize,
-    pub sel_y1: usize,
-    pub sel_x2: usize,
-    pub sel_y2: usize,
+    pub sel_x: usize,
+    pub sel_y: usize,
     font_cache: HashMap<FontCacheKey, Rc<Texture>>,
 }
 
@@ -62,15 +60,13 @@ impl<'a> Pane<'a> {
             cursor_x: 0,
             cursor_y: 0,
             max_cursor_x: 0,
+            sel_x: 0,
+            sel_y: 0,
             scroll_idx: 0,
             scroll_offset: 0,
             line_height: font.height(),
             font: font,
             font_cache: HashMap::new(),
-            sel_x1: 0,
-            sel_y1: 0,
-            sel_x2: 0,
-            sel_y2: 0,
         }
     }
 
@@ -135,27 +131,24 @@ impl<'a> Pane<'a> {
     }
 
     pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         self.cursor_y = max(0, self.cursor_y as i32 - num as i32) as usize;
         self.cursor_x = max(
             min(self.cursor_x, buffer.contents[self.cursor_y].len()),
             min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
         );
-        self.set_selection(old_x, old_y, extend_selection);
+        self.set_selection(extend_selection);
     }
 
     pub fn cursor_down(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         self.cursor_y = min(buffer.contents.len() - 1, self.cursor_y + num);
         self.cursor_x = max(
             min(self.cursor_x, buffer.contents[self.cursor_y].len()),
             min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
         );
-        self.set_selection(old_x, old_y, extend_selection);
+        self.set_selection(extend_selection);
     }
 
     pub fn cursor_left(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         if self.cursor_x as i32 - num as i32 >= 0 {
             self.cursor_x = (self.cursor_x as i32 - num as i32) as usize;
         } else {
@@ -167,11 +160,10 @@ impl<'a> Pane<'a> {
             }
         }
         self.max_cursor_x = self.cursor_x;
-        self.set_selection(old_x, old_y, extend_selection);
+        self.set_selection(extend_selection);
     }
 
     pub fn cursor_right(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        let (old_x, old_y) = (self.cursor_x, self.cursor_y);
         if self.cursor_x + num <= buffer.contents[self.cursor_y].len() {
             self.cursor_x += num;
         } else {
@@ -182,7 +174,8 @@ impl<'a> Pane<'a> {
                 self.cursor_right(remainder, buffer, extend_selection);
             }
         }
-        self.set_selection(old_x, old_y, extend_selection);
+        self.max_cursor_x = self.cursor_x;
+        self.set_selection(extend_selection);
     }
 
     pub fn scroll_up(&mut self, num: usize) {
@@ -230,28 +223,72 @@ impl<'a> Pane<'a> {
         length
     }
 
-    fn set_selection(&mut self, old_x: usize, old_y: usize, extend_selection: bool) {
-        if extend_selection {
-            if self.cursor_x >= self.sel_x2 && self.cursor_y >= self.sel_y2 {
-                self.sel_x2 = self.cursor_x;
-                self.sel_y2 = self.cursor_y;
-            } else if self.cursor_x >= self.sel_x1 && self.cursor_y >= self.sel_y2 {
-                self.sel_x1 = self.cursor_x;
-                self.sel_y1 = self.cursor_y;
-            } else if old_x == self.sel_x1 && old_y == self.sel_y1 {
-                self.sel_x1 = self.cursor_x;
-                self.sel_y1 = self.cursor_y;
-            } else {
-                self.sel_x2 = self.cursor_x;
-                self.sel_y2 = self.cursor_y;
-            }
-        } else {
-            self.sel_x1 = self.cursor_x;
-            self.sel_x2 = self.cursor_x;
-            self.sel_y1 = self.cursor_y;
-            self.sel_y2 = self.cursor_y;
+    pub fn set_selection(&mut self, extend_selection: bool) {
+        if !extend_selection {
+            self.sel_x = self.cursor_x;
+            self.sel_y = self.cursor_y;
         }
-        println!("{} {} [{} {} to {} {}]", self.cursor_x, self.cursor_y, self.sel_x1, self.sel_y1, self.sel_x2, self.sel_y2);
+    }
+
+    // A selection is defined by the cursor position as one corner
+    // and the selection position at the other. This function
+    // returns those corners in order: (x1, y1, x2, y2)
+    // where x1 and y1 are earlier in the buffer than x2 and y2
+    pub fn get_selection(&self) -> (usize, usize, usize, usize) {
+        if self.sel_y > self.cursor_y || self.sel_y == self.cursor_y
+            && self.sel_x > self.cursor_x {
+            return (self.cursor_x, self.cursor_y, self.sel_x, self.sel_y);
+        }
+        return (self.sel_x, self.sel_y, self.cursor_x, self.cursor_y);
+    }
+
+    pub fn remove_selection(&mut self, buffer: &mut Buffer) {
+        let (x1, y1, x2, y2) = self.get_selection();
+        if x1 == x2 && y1 == y2 {
+            self.remove_char(buffer);
+        } else {
+            buffer.delete(x1, y1, x2, y2);
+            self.cursor_x = x1;
+            self.cursor_y = y1;
+        }
+        self.set_selection(false);
+    }
+    
+    // Get the buffer indices based on a screen position. This can be used to set
+    // the cursor position with the mouse.
+    pub fn get_position_from_screen(&self, x: i32, y: i32, buffer: &Buffer) -> (usize, usize) {
+        let padding = 5;
+        let bar_height: u32 = (self.line_height + padding * 2) as u32;
+        let mut y_idx = max(((f64::from(y)
+                    - f64::from(self.y)
+                    - f64::from(padding)
+                    - f64::from(bar_height))
+                / f64::from(self.line_height))
+            .floor() as i32, 0) as usize
+            + self.scroll_idx;
+        y_idx = min(y_idx, buffer.contents.len() - 1);
+        let max_x_idx = buffer.contents[y_idx].len();
+
+        let mut length = self.x + padding;
+        let mut x_idx = 0;
+        let mut last_length = length;
+        while length < x && (x_idx as usize) < max_x_idx {
+            last_length = length;
+            let (char_x, _) =  self.font
+                .size_of(&buffer.contents[y_idx].chars().nth(x_idx).unwrap().to_string())
+                .unwrap();
+            length += char_x as i32;
+            x_idx += 1;
+        }
+        if (last_length as i32 - x as i32).abs() > (length as i32 - x as i32).abs() {
+            x_idx += 1;
+        }
+        x_idx = max(x_idx as i32 - 1, 0) as usize;
+
+        (x_idx, y_idx)
+        // self.cursor_x = max(x_idx as i32 - 1, 0) as usize;
+        // self.max_cursor_x = self.cursor_x;
+        // self.set_selection(false);
     }
 }
 

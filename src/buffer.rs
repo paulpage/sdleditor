@@ -84,14 +84,11 @@ impl Buffer {
 
     // TODO: probably doesn't work
     pub fn delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
-        if y1 == y2 {
-            self.contents[y1].replace_range(x1..x2, "");
-        } else if y1 > y2 {
-            self.contents[y2].replace_range(..x2, "");
-            for _ in y1+1..y2 {
-                self.contents.remove(y1+1);
-            }
-            self.contents[y1].replace_range(x1.., "");
+        let pre = self.contents[y1][..x1].to_string();
+        let post = self.contents[y2][x2..].to_string();
+        for _ in y1..=y2 {
+            self.contents.remove(y1);
         }
+        self.contents.insert(y1, format!("{}{}", pre, post));
     }
 }

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{Keycode, Mod};
+use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
@@ -35,41 +36,50 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
             buffer.is_dirty = true;
         }
         Event::MouseButtonDown { x, y, .. } => {
-            let bar_height: u32 = (pane.line_height + 5 * 2) as u32;
-            let padding = 5;
-            let mut y_idx = max(((f64::from(y)
-                              - f64::from(pane.y)
-                              - f64::from(padding)
-                              - f64::from(bar_height))
-                             / f64::from(pane.line_height))
-                .floor() as i32, 0) as usize
-                + pane.scroll_idx;
-            y_idx = min(y_idx, buffer.contents.len() - 1);
-            let max_x_idx = buffer.contents[y_idx].len();
-
+            let (x_idx, y_idx) = pane.get_position_from_screen(x, y, buffer);
+            pane.cursor_x = x_idx;
             pane.cursor_y = y_idx;
+            pane.set_selection(false);
+            // let bar_height: u32 = (pane.line_height + 5 * 2) as u32;
+            // let padding = 5;
+            // let mut y_idx = max(((f64::from(y)
+            //                   - f64::from(pane.y)
+            //                   - f64::from(padding)
+            //                   - f64::from(bar_height))
+            //                  / f64::from(pane.line_height))
+            //     .floor() as i32, 0) as usize
+            //     + pane.scroll_idx;
+            // y_idx = min(y_idx, buffer.contents.len() - 1);
+            // let max_x_idx = buffer.contents[y_idx].len();
 
-            let mut length = pane.x + padding;
-            let mut x_idx = 0;
-            let mut last_length = length;
-            while length < x && (x_idx as usize) < max_x_idx {
-                last_length = length;
-                let (char_x, _) =  pane.font
-                    .size_of(&buffer.contents[pane.cursor_y].chars().nth(x_idx).unwrap().to_string())
-                    .unwrap();
-                length += char_x as i32;
-                x_idx += 1;
-            }
-            if (last_length as i32 - x as i32).abs() > (length as i32 - x as i32).abs() {
-                x_idx += 1;
-            }
+            // pane.cursor_y = y_idx;
 
-            pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
-            pane.max_cursor_x = pane.cursor_x;
+            // let mut length = pane.x + padding;
+            // let mut x_idx = 0;
+            // let mut last_length = length;
+            // while length < x && (x_idx as usize) < max_x_idx {
+            //     last_length = length;
+            //     let (char_x, _) =  pane.font
+            //         .size_of(&buffer.contents[pane.cursor_y].chars().nth(x_idx).unwrap().to_string())
+            //         .unwrap();
+            //     length += char_x as i32;
+            //     x_idx += 1;
+            // }
+            // if (last_length as i32 - x as i32).abs() > (length as i32 - x as i32).abs() {
+            //     x_idx += 1;
+            // }
+
+            // pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
+            // pane.max_cursor_x = pane.cursor_x;
+            // pane.set_selection(false);
         }
-        Event::MultiGesture { x, y, .. } => {
-            println!("{}, {}", x, y);
-            pane.scroll_offset += y as i32;
+        Event::MouseMotion { mousestate, x, y, .. } => {
+            if mousestate.is_mouse_button_pressed(MouseButton::Left) {
+            let (x_idx, y_idx) = pane.get_position_from_screen(x, y, buffer);
+            pane.cursor_x = x_idx;
+            pane.cursor_y = y_idx;
+            pane.set_selection(true);
+            }
         }
         Event::MouseWheel { y, .. } => {
             let candidate = pane.scroll_idx as i32 - (y * 3);
@@ -80,9 +90,6 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
             } else {
                 pane.scroll_idx = candidate as usize;
             }
-        }
-        Event::MultiGesture {x, y, ..} => {
-            println!("{}{}", x, y);
         }
         Event::KeyDown {
             keycode: Some(kc),
@@ -106,7 +113,7 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
                     Keycode::PageUp => pane.scroll_up(3),
                     Keycode::PageDown => pane.scroll_down(3, &buffer),
                     Keycode::Return => pane.break_line(&mut buffer),
-                    Keycode::Backspace => pane.remove_char(&mut buffer),
+                    Keycode::Backspace => pane.remove_selection(&mut buffer),
                     _ => {}
                 }
             }
@@ -217,7 +224,7 @@ fn main() {
 
         for mut pane in &mut panes {
             pane.draw(&mut canvas);
-            let line_height = pane.line_height;
+            let line_height = pane.line_height as i32;
             // Smooth scrolling
             let target_scroll_offset = pane.scroll_idx as i32 * line_height as i32;
             let scroll_delta = target_scroll_offset - pane.scroll_offset;
@@ -250,70 +257,60 @@ fn main() {
                 let bar_height: i32 = line_height as i32 + padding * 2;
                 // Draw the contents of the file and the cursor.
 
-                for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate() {
+                for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate()
+                    .map(|(i, entry)| (i + first_line, entry)) {
 
                     let midpoint = min(pane.cursor_x, entry.len());
+                    let line_y = bar_height + padding + i as i32 * line_height as i32 - scroll_offset;
 
+                    // Draw the selection
+                    let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = pane.get_selection();
+                    if i >= sel_start_y && i <= sel_end_y {
+                        let mut x1: u32 = 0;
+                        let mut x2: u32 = pane.text_length(&buffer.contents[i]);
+                        if buffer.contents[i].len() > 0 {
+                            if i == sel_start_y {
+                                x1 = pane.text_length(&buffer.contents[i][..sel_start_x]);
+                            }
+                            if i == sel_end_y {
+                                x2 = pane.text_length(&buffer.contents[i][..sel_end_x]);
+                            }
+                        }
+                        let color = Color::RGBA(146, 131, 116, 0);
+                        let rect = Rect::new(
+                            padding as i32 + x1 as i32,
+                            line_y,
+                            (x2 - x1) as u32,
+                            line_height as u32);
+                        pane.fill_rect(&mut canvas, color, rect);
+                    }
+
+                    // Draw the text
                     let midpoint_width = pane.draw_text(
                         &mut canvas,
                         Color::RGBA(251, 241, 199, 255),
                         padding,
-                        bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
+                        line_y,
                         &entry[0..midpoint]);
-                    let text_length = pane.draw_text(
+                    let text_length = midpoint_width + pane.draw_text(
                         &mut canvas,
                         Color::RGBA(251, 241, 199, 255),
                         padding + midpoint_width,
-                        bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset,
+                        line_y,
                         &entry[midpoint..entry.len()]);
 
-                    // Draw the selection
-                    let mut x1: u32 = 0;
-                    let mut x2: u32 = text_length as u32;
-                    if first_line + i == pane.sel_y1 {
-                        if buffer.contents[pane.cursor_y].len() > 0 {
-                            x1 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_x1]);
-                        }
-                        if pane.sel_y1 == pane.sel_y2 {
-                            x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_x2]) as u32;
-                        }
-                        let rect = Rect::new(
-                            padding as i32 + x1 as i32,
-                            bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,
-                            (x2 - x1) as u32,
-                            line_height as u32);
-                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect)
-                    } else if first_line + i == pane.sel_y2 {
-                        if buffer.contents[pane.sel_y2].len() > 0 {
-                            x2 = pane.text_length(&buffer.contents[pane.cursor_y][..pane.sel_y2]);
-                        }
-                        let rect = Rect::new(
-                            padding,
-                            bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
-                            text_length as u32,
-                            line_height as u32);
-                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect);
-                    } else if first_line + i > pane.sel_y1 && first_line + i < pane.sel_y2 {
-                        let rect = Rect::new(
-                            padding,
-                            bar_height + padding + (i as i32 + first_line as i32) * line_height as i32 - scroll_offset,
-                            text_length as u32,
-                            line_height as u32);
-                        pane.fill_rect(&mut canvas, Color::RGBA(255, 0, 255, 255), rect);
-                    }
-
-                    // Draw the cursor if we're rendering the cursor line
-                    if first_line + i == pane.cursor_y {
+                    // Draw the cursor
+                    if i == pane.cursor_y {
                         let rect = Rect::new(
                             padding + midpoint_width as i32,
-                            bar_height + padding + (i + first_line) as i32 * line_height as i32 - scroll_offset as i32,
+                            line_y,
                             2,
                             line_height as u32
                         );
                         pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
                     }
 
-                    // Draw bar
+                    // Draw the bar
                     let rect = Rect::new(0, 0, pane.w, bar_height as u32);
                     pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
                     let dirty_text = if buffer.is_dirty { "*" } else { "" };
