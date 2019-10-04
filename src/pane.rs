@@ -14,17 +14,17 @@ pub enum PaneType {
     FileManager,
 }
 
-#[derive(Hash)]
+#[derive(Hash, PartialEq)]
 struct FontCacheKey {
     c: char,
     color: Color,
 }
 
-impl PartialEq for FontCacheKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.c == other.c && self.color == other.color
-    }
-}
+// impl PartialEq for FontCacheKey {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.c == other.c && self.color == other.color
+//     }
+// }
 
 impl Eq for FontCacheKey {}
 
@@ -51,12 +51,12 @@ impl<'a> Pane<'a> {
 
     pub fn new(x: i32, y: i32, w: u32, h: u32, font: Font<'a, 'static>, pane_type: PaneType, buffer_id: Option<usize>) -> Self {
         Pane {
-            pane_type: pane_type,
-            x: x,
-            y: y,
-            w: w,
-            h: h,
-            buffer_id: buffer_id,
+            pane_type,
+            x,
+            y,
+            w,
+            h,
+            buffer_id,
             cursor_x: 0,
             cursor_y: 0,
             max_cursor_x: 0,
@@ -65,7 +65,7 @@ impl<'a> Pane<'a> {
             scroll_idx: 0,
             scroll_offset: 0,
             line_height: font.height(),
-            font: font,
+            font,
             font_cache: HashMap::new(),
         }
     }
@@ -90,7 +90,7 @@ impl<'a> Pane<'a> {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
             for c in text.chars() {
-                let key = FontCacheKey {c: c, color: color };
+                let key = FontCacheKey {c, color };
                 let texture = self
                     .font_cache
                     .get(&key)
@@ -148,32 +148,18 @@ impl<'a> Pane<'a> {
         self.set_selection(extend_selection);
     }
 
-    pub fn cursor_left(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        if self.cursor_x as i32 - num as i32 >= 0 {
-            self.cursor_x = (self.cursor_x as i32 - num as i32) as usize;
-        } else {
-            if self.cursor_y > 0 {
-                let remainder = ((self.cursor_x as i32 - num as i32).abs() - 1) as usize;
-                self.cursor_up(1, buffer, extend_selection);
-                self.cursor_x = buffer.contents[self.cursor_y].len();
-                self.cursor_left(remainder, buffer, extend_selection);
-            }
-        }
+    pub fn cursor_left(&mut self, buffer: &Buffer, extend_selection: bool) {
+        let (x, y) = buffer.prev_char(self.cursor_x, self.cursor_y);
+        self.cursor_x = x;
+        self.cursor_y = y;
         self.max_cursor_x = self.cursor_x;
         self.set_selection(extend_selection);
     }
 
-    pub fn cursor_right(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        if self.cursor_x + num <= buffer.contents[self.cursor_y].len() {
-            self.cursor_x += num;
-        } else {
-            if self.cursor_y < buffer.contents.len() - 1 {
-                let remainder = (((self.cursor_x + num) as i32 - buffer.contents[self.cursor_y].len() as i32).abs() - 1) as usize;
-                self.cursor_down(1, buffer, extend_selection);
-                self.cursor_x = 0;
-                self.cursor_right(remainder, buffer, extend_selection);
-            }
-        }
+    pub fn cursor_right(&mut self, buffer: &Buffer, extend_selection: bool) {
+        let (x, y) = buffer.next_char(self.cursor_x, self.cursor_y);
+        self.cursor_x = x;
+        self.cursor_y = y;
         self.max_cursor_x = self.cursor_x;
         self.set_selection(extend_selection);
     }
@@ -194,6 +180,7 @@ impl<'a> Pane<'a> {
         self.cursor_x = 0;
         self.max_cursor_x = self.cursor_x;
         buffer.contents.insert(self.cursor_y, last_half);
+        self.set_selection(false);
     }
 
     pub fn remove_char(&mut self, mut buffer: &mut Buffer) {
@@ -204,13 +191,11 @@ impl<'a> Pane<'a> {
             self.cursor_x -= 1;
             self.max_cursor_x = self.cursor_x;
             buffer.is_dirty = true;
-        } else {
-            if self.cursor_y > 0 {
-                let this_line = buffer.contents.remove(self.cursor_y);
-                self.cursor_y -= 1;
-                self.cursor_x = buffer.contents[self.cursor_y].len();
-                buffer.contents[self.cursor_y].push_str(&this_line);
-            }
+        } else if self.cursor_y > 0 {
+            let this_line = buffer.contents.remove(self.cursor_y);
+            self.cursor_y -= 1;
+            self.cursor_x = buffer.contents[self.cursor_y].len();
+            buffer.contents[self.cursor_y].push_str(&this_line);
         }
     }
 
@@ -239,7 +224,7 @@ impl<'a> Pane<'a> {
             && self.sel_x > self.cursor_x {
             return (self.cursor_x, self.cursor_y, self.sel_x, self.sel_y);
         }
-        return (self.sel_x, self.sel_y, self.cursor_x, self.cursor_y);
+        (self.sel_x, self.sel_y, self.cursor_x, self.cursor_y)
     }
 
     pub fn remove_selection(&mut self, buffer: &mut Buffer) {
@@ -286,9 +271,6 @@ impl<'a> Pane<'a> {
         x_idx = max(x_idx as i32 - 1, 0) as usize;
 
         (x_idx, y_idx)
-        // self.cursor_x = max(x_idx as i32 - 1, 0) as usize;
-        // self.max_cursor_x = self.cursor_x;
-        // self.set_selection(false);
     }
 }
 

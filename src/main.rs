@@ -69,16 +69,16 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
                 match kc {
                     Keycode::Up => pane.cursor_up(1, &buffer, true),
                     Keycode::Down => pane.cursor_down(1, &buffer, true),
-                    Keycode::Left => pane.cursor_left(1, &buffer, true),
-                    Keycode::Right => pane.cursor_right(1, &buffer, true),
+                    Keycode::Left => pane.cursor_left(&buffer, true),
+                    Keycode::Right => pane.cursor_right(&buffer, true),
                     _ => {}
                 }
             } else {
                 match kc {
                     Keycode::Up => pane.cursor_up(1, &buffer, false),
                     Keycode::Down => pane.cursor_down(1, &buffer, false),
-                    Keycode::Left => pane.cursor_left(1, &buffer, false),
-                    Keycode::Right => pane.cursor_right(1, &buffer, false),
+                    Keycode::Left => pane.cursor_left(&buffer, false),
+                    Keycode::Right => pane.cursor_right(&buffer, false),
                     Keycode::PageUp => pane.scroll_up(3),
                     Keycode::PageDown => pane.scroll_down(3, &buffer),
                     Keycode::Return => pane.break_line(&mut buffer),
@@ -181,10 +181,8 @@ fn main() {
                                 }
                             }
                         }
-                    } else {
-                        if let Some(b) = panes[pane_idx].buffer_id {
-                            handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
-                        }
+                    } else if let Some(b) = panes[pane_idx].buffer_id {
+                        handle_buffer_event(&mut panes[pane_idx], &mut buffers[b], event);
                     }
                 }
                 _ => {
@@ -195,7 +193,7 @@ fn main() {
             }
         }
 
-        let (width, height) = canvas.window().size();
+        let (_width, height) = canvas.window().size();
         canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
         canvas.clear();
 
@@ -247,7 +245,7 @@ fn main() {
                     if i >= sel_start_y && i <= sel_end_y {
                         let mut x1: u32 = 0;
                         let mut x2: u32 = pane.text_length(&buffer.contents[i]);
-                        if buffer.contents[i].len() > 0 {
+                        if buffer.contents[i].is_empty() {
                             if i == sel_start_y {
                                 x1 = pane.text_length(&buffer.contents[i][..sel_start_x]);
                             }
@@ -271,7 +269,7 @@ fn main() {
                         padding,
                         line_y,
                         &entry[0..midpoint]);
-                    let text_length = midpoint_width + pane.draw_text(
+                    pane.draw_text(
                         &mut canvas,
                         Color::RGBA(251, 241, 199, 255),
                         padding + midpoint_width,

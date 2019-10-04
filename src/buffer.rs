@@ -48,16 +48,16 @@ impl Buffer {
             redo_stack: Vec::new(),
         };
         let file = OpenOptions::new()
-            .read(true)
             .write(true)
             .create(true)
+            .read(true)
             .open(&path)
             .unwrap();
         let reader = BufReader::new(file);
         for line in reader.lines() {
             buffer.contents.push(line.unwrap());
         }
-        if buffer.contents.len() == 0 {
+        if buffer.contents.is_empty() {
             buffer.contents.push(String::new());
         }
         buffer
@@ -73,7 +73,7 @@ impl Buffer {
 
         let mut f = BufWriter::new(f);
         for line in &self.contents {
-            write!(&mut f, "{}\n", line).unwrap();
+            writeln!(&mut f, "{}", line).unwrap();
         }
         f.flush().unwrap();
         self.is_dirty = false;
@@ -88,19 +88,15 @@ impl Buffer {
         f.flush().unwrap();
     }
 
-    pub fn insert(&mut self, x: usize, y: usize, contents: &str) {
-        self.contents[y].insert_str(x, contents);
-    }
-
     pub fn delete_text(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
         let text = self.do_delete(x1, y1, x2, y2);
         self.undo_stack.push(Action {
             action_type: ActionType::Delete,
-            text: text,
-            x1: x1,
-            y1: y1,
-            x2: x2,
-            y2: y2,
+            text,
+            x1,
+            y1,
+            x2,
+            y2,
         });
     }
 
@@ -108,11 +104,11 @@ impl Buffer {
         let (x2, y2) = self.do_insert(x, y, text.clone());
         self.undo_stack.push(Action {
             action_type: ActionType::Insert,
-            text: text,
+            text,
             x1: x,
             y1: y,
-            x2: x2,
-            y2: y2,
+            x2,
+            y2,
         });
     }
 
@@ -165,12 +161,12 @@ impl Buffer {
                         text: a.text,
                         x1: a.x1,
                         y1: a.y1,
-                        x2: x2,
-                        y2: y2,
+                        x2,
+                        y2,
                     });
                 }
                 ActionType::Insert => {
-                    let text = self.do_delete(a.x1, a.y1, a.x2, a.y2);
+                    self.do_delete(a.x1, a.y1, a.x2, a.y2);
                     self.redo_stack.push(Action {
                         action_type: ActionType::Insert,
                         text: a.text,
@@ -195,5 +191,23 @@ impl Buffer {
                 }
             }
         }
+    }
+
+    pub fn next_char(&self, x: usize, y: usize) -> (usize, usize) {
+        if x < self.contents[y].len() {
+            return (x + 1, y);
+        } else if y < self.contents.len() {
+            return (0, y + 1);
+        }
+        (x, y)
+    }
+
+    pub fn prev_char(&self, x: usize, y: usize) -> (usize, usize) {
+        if x > 0 {
+            return (x - 1, y);
+        } else if y > 0 {
+            return (self.contents[y - 1].len(), y - 1);
+        }
+        (x, y)
     }
 }
