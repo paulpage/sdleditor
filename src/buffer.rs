@@ -90,6 +90,7 @@ impl Buffer {
 
     pub fn delete_text(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
         let text = self.do_delete(x1, y1, x2, y2);
+        self.is_dirty = true;
         self.undo_stack.push(Action {
             action_type: ActionType::Delete,
             text,
@@ -102,6 +103,7 @@ impl Buffer {
 
     pub fn insert_text(&mut self, x: usize, y: usize, text: String) {
         let (x2, y2) = self.do_insert(x, y, text.clone());
+        self.is_dirty = true;
         self.undo_stack.push(Action {
             action_type: ActionType::Insert,
             text,
@@ -114,10 +116,6 @@ impl Buffer {
 
     fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
         let mut undo_buffer = Vec::new();
-        // let (mut x, mut y) = (x1, y1);
-        // while x != x2 || y != y2 {
-
-        // }
 
         if y1 == y2 {
             undo_buffer.push(self.contents[y1][x1..x2].to_string());

@@ -34,7 +34,7 @@ pub struct Pane<'a> {
     pub y: i32,
     pub w: u32,
     pub h: u32,
-    pub buffer_id: Option<usize>,
+    pub buffer_id: usize,
     pub cursor_x: usize,
     pub max_cursor_x: usize,
     pub cursor_y: usize,
@@ -49,7 +49,7 @@ pub struct Pane<'a> {
 
 impl<'a> Pane<'a> {
 
-    pub fn new(x: i32, y: i32, w: u32, h: u32, font: Font<'a, 'static>, pane_type: PaneType, buffer_id: Option<usize>) -> Self {
+    pub fn new(x: i32, y: i32, w: u32, h: u32, font: Font<'a, 'static>, pane_type: PaneType, buffer_id: usize) -> Self {
         Pane {
             pane_type,
             x,
@@ -269,8 +269,6 @@ impl<'a> Pane<'a> {
             x_idx += 1;
         }
         x_idx = max(x_idx as i32 - 1, 0) as usize;
-
         (x_idx, y_idx)
     }
 }
-
