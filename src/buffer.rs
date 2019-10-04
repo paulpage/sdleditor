@@ -5,18 +5,24 @@ pub struct Buffer {
     pub name: String,
     pub contents: Vec<String>,
     pub is_dirty: bool,
+    pub undo_stack: Vec<Action>,
+    pub redo_stack: Vec<Action>,
 }
 
-enum ActionType {
+#[derive(Clone)]
+pub enum ActionType {
     Insert,
     Delete,
 }
 
-struct Action {
+#[derive(Clone)]
+pub struct Action {
     action_type: ActionType,
     text: String,
-    x: usize,
-    y: usize,
+    x1: usize,
+    y1: usize,
+    x2: usize,
+    y2: usize,
 }
 
 impl Buffer {
@@ -26,6 +32,8 @@ impl Buffer {
             contents: Vec::new(),
             name: "UNNAMED".to_string(),
             is_dirty: false,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         };
         buffer.contents.push(String::new());
         buffer
@@ -36,6 +44,8 @@ impl Buffer {
             contents: Vec::new(),
             name: path.clone(),
             is_dirty: false,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         };
         let file = OpenOptions::new()
             .read(true)
@@ -82,13 +92,108 @@ impl Buffer {
         self.contents[y].insert_str(x, contents);
     }
 
-    // TODO: probably doesn't work
-    pub fn delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
+    pub fn delete_text(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
+        let text = self.do_delete(x1, y1, x2, y2);
+        self.undo_stack.push(Action {
+            action_type: ActionType::Delete,
+            text: text,
+            x1: x1,
+            y1: y1,
+            x2: x2,
+            y2: y2,
+        });
+    }
+
+    pub fn insert_text(&mut self, x: usize, y: usize, text: String) {
+        let (x2, y2) = self.do_insert(x, y, text.clone());
+        self.undo_stack.push(Action {
+            action_type: ActionType::Insert,
+            text: text,
+            x1: x,
+            y1: y,
+            x2: x2,
+            y2: y2,
+        });
+    }
+
+    fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
+        let mut undo_buffer = Vec::new();
         let pre = self.contents[y1][..x1].to_string();
+        let npre = self.contents[y1][x1..].to_string();
         let post = self.contents[y2][x2..].to_string();
+        let npost = self.contents[y2][..x2].to_string();
         for _ in y1..=y2 {
-            self.contents.remove(y1);
+            undo_buffer.push(self.contents.remove(y1));
         }
+        let end = undo_buffer.len() - 1;
+        undo_buffer[0] = npre;
+        undo_buffer[end] = npost;
+        println!("{}", undo_buffer.join("\n"));
         self.contents.insert(y1, format!("{}{}", pre, post));
+        undo_buffer.join("\n")
+    }
+
+    fn do_insert(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
+        let l = self.contents.remove(y);
+        let (start, end) = l.split_at(x);
+        self.contents.insert(y, start.to_string());
+        let mut x = x;
+        let mut y = y;
+        for c in text.chars() {
+            if c == '\n' {
+                y += 1;
+                x = 0;
+                self.contents.insert(y, String::new());
+            } else {
+                self.contents[y].push(c);
+                x += 1;
+            }
+        }
+        self.contents[y].push_str(end);
+        (x, y)
+    }
+ 
+    // TODO: Still acts funky, try typing "Hello, World!" into an empty document,
+    // deleting some of the middle, then undoing
+    pub fn undo(&mut self) {
+        if let Some(a) = self.undo_stack.pop() {
+            match a.action_type {
+                ActionType::Delete => {
+                    let (x2, y2) = self.do_insert(a.x1, a.y1, a.text.clone());
+                    self.redo_stack.push(Action {
+                        action_type: ActionType::Delete,
+                        text: a.text,
+                        x1: a.x1,
+                        y1: a.y1,
+                        x2: x2,
+                        y2: y2,
+                    });
+                }
+                ActionType::Insert => {
+                    let text = self.do_delete(a.x1, a.y1, a.x2, a.y2);
+                    self.redo_stack.push(Action {
+                        action_type: ActionType::Insert,
+                        text: a.text,
+                        x1: a.x1,
+                        y1: a.y2,
+                        x2: a.x2,
+                        y2: a.y2,
+                    });
+                }
+            }
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if let Some(a) = self.redo_stack.pop() {
+            match a.action_type {
+                ActionType::Delete => {
+                    self.delete_text(a.x1, a.y1, a.x2, a.y2);
+                }
+                ActionType::Insert => {
+                    self.insert_text(a.x1, a.y1, a.text);
+                }
+            }
+        }
     }
 }

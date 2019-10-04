@@ -247,7 +247,7 @@ impl<'a> Pane<'a> {
         if x1 == x2 && y1 == y2 {
             self.remove_char(buffer);
         } else {
-            buffer.delete(x1, y1, x2, y2);
+            buffer.delete_text(x1, y1, x2, y2);
             self.cursor_x = x1;
             self.cursor_y = y1;
         }

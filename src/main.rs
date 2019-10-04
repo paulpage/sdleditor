@@ -34,44 +34,13 @@ fn handle_buffer_event(pane: &mut Pane, mut buffer: &mut Buffer, event: Event) {
             pane.cursor_x += text.len();
             pane.max_cursor_x = pane.cursor_x;
             buffer.is_dirty = true;
+            pane.set_selection(false);
         }
         Event::MouseButtonDown { x, y, .. } => {
             let (x_idx, y_idx) = pane.get_position_from_screen(x, y, buffer);
             pane.cursor_x = x_idx;
             pane.cursor_y = y_idx;
             pane.set_selection(false);
-            // let bar_height: u32 = (pane.line_height + 5 * 2) as u32;
-            // let padding = 5;
-            // let mut y_idx = max(((f64::from(y)
-            //                   - f64::from(pane.y)
-            //                   - f64::from(padding)
-            //                   - f64::from(bar_height))
-            //                  / f64::from(pane.line_height))
-            //     .floor() as i32, 0) as usize
-            //     + pane.scroll_idx;
-            // y_idx = min(y_idx, buffer.contents.len() - 1);
-            // let max_x_idx = buffer.contents[y_idx].len();
-
-            // pane.cursor_y = y_idx;
-
-            // let mut length = pane.x + padding;
-            // let mut x_idx = 0;
-            // let mut last_length = length;
-            // while length < x && (x_idx as usize) < max_x_idx {
-            //     last_length = length;
-            //     let (char_x, _) =  pane.font
-            //         .size_of(&buffer.contents[pane.cursor_y].chars().nth(x_idx).unwrap().to_string())
-            //         .unwrap();
-            //     length += char_x as i32;
-            //     x_idx += 1;
-            // }
-            // if (last_length as i32 - x as i32).abs() > (length as i32 - x as i32).abs() {
-            //     x_idx += 1;
-            // }
-
-            // pane.cursor_x = max(x_idx as i32 - 1, 0) as usize;
-            // pane.max_cursor_x = pane.cursor_x;
-            // pane.set_selection(false);
         }
         Event::MouseMotion { mousestate, x, y, .. } => {
             if mousestate.is_mouse_button_pressed(MouseButton::Left) {
@@ -174,11 +143,21 @@ fn main() {
                                         break 'mainloop;
                                     }
                                 }
+                                Keycode::Z => {
+                                    if let Some(b) = panes[pane_idx].buffer_id {
+                                        buffers[b].redo();
+                                    }
+                                }
                                 _ => {}
                             }
                         } else {
                             match kc {
                                 Keycode::Q => break 'mainloop,
+                                Keycode::Z => {
+                                    if let Some(b) = panes[pane_idx].buffer_id {
+                                        buffers[b].undo();
+                                    }
+                                }
                                 Keycode::S => {
                                     if let Some(b) = panes[pane_idx].buffer_id {
                                         buffers[b].save();
