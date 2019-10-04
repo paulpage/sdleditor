@@ -114,18 +114,27 @@ impl Buffer {
 
     fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
         let mut undo_buffer = Vec::new();
-        let pre = self.contents[y1][..x1].to_string();
-        let npre = self.contents[y1][x1..].to_string();
-        let post = self.contents[y2][x2..].to_string();
-        let npost = self.contents[y2][..x2].to_string();
-        for _ in y1..=y2 {
-            undo_buffer.push(self.contents.remove(y1));
+        // let (mut x, mut y) = (x1, y1);
+        // while x != x2 || y != y2 {
+
+        // }
+
+        if y1 == y2 {
+            undo_buffer.push(self.contents[y1][x1..x2].to_string());
+            self.contents[y1].replace_range(x1..x2, "");
+        } else {
+            let pre = self.contents[y1][..x1].to_string();
+            let npre = self.contents[y1][x1..].to_string();
+            let post = self.contents[y2][x2..].to_string();
+            let npost = self.contents[y2][..x2].to_string();
+            for _ in y1..=y2 {
+                undo_buffer.push(self.contents.remove(y1));
+            }
+            let end = undo_buffer.len() - 1;
+            undo_buffer[0] = npre.to_string();
+            undo_buffer[end] = npost;
+            self.contents.insert(y1, format!("{}{}", pre, post));
         }
-        let end = undo_buffer.len() - 1;
-        undo_buffer[0] = npre;
-        undo_buffer[end] = npost;
-        println!("{}", undo_buffer.join("\n"));
-        self.contents.insert(y1, format!("{}{}", pre, post));
         undo_buffer.join("\n")
     }
 

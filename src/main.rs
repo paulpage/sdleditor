@@ -245,7 +245,7 @@ fn main() {
                     if i >= sel_start_y && i <= sel_end_y {
                         let mut x1: u32 = 0;
                         let mut x2: u32 = pane.text_length(&buffer.contents[i]);
-                        if buffer.contents[i].is_empty() {
+                        if !buffer.contents[i].is_empty() {
                             if i == sel_start_y {
                                 x1 = pane.text_length(&buffer.contents[i][..sel_start_x]);
                             }
