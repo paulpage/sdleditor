@@ -20,12 +20,6 @@ struct FontCacheKey {
     color: Color,
 }
 
-// impl PartialEq for FontCacheKey {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.c == other.c && self.color == other.color
-//     }
-// }
-
 impl Eq for FontCacheKey {}
 
 pub struct Pane<'a> {
@@ -49,13 +43,13 @@ pub struct Pane<'a> {
 
 impl<'a> Pane<'a> {
 
-    pub fn new(x: i32, y: i32, w: u32, h: u32, font: Font<'a, 'static>, pane_type: PaneType, buffer_id: usize) -> Self {
+    pub fn new(font: Font<'a, 'static>, pane_type: PaneType, buffer_id: usize) -> Self {
         Pane {
             pane_type,
-            x,
-            y,
-            w,
-            h,
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
             buffer_id,
             cursor_x: 0,
             cursor_y: 0,
@@ -70,9 +64,33 @@ impl<'a> Pane<'a> {
         }
     }
 
-    pub fn draw(&self, canvas: &mut WindowCanvas) {
+    pub fn draw(&mut self, canvas: &mut WindowCanvas, padding: i32, is_active: bool) {
+        // Background
+        let color = if is_active {
+            Color::RGBA(152, 151, 26, 255)
+        } else {
+            Color::RGBA(0, 0, 0, 255)
+        };
+        canvas.set_draw_color(color);
         let rect = Rect::new(self.x, self.y, self.w, self.h);
         canvas.fill_rect(rect).unwrap();
+        canvas.set_draw_color(Color::RGBA(20, 20, 20, 255));
+        let rect = Rect::new(
+            self.x + padding,
+            self.y + padding,
+            max(0, self.w as i32 - padding * 2) as u32,
+            max(0, self.h as i32 - padding * 2) as u32
+        );
+        canvas.fill_rect(rect).unwrap();
+
+        // Calculate smooth scrolling
+        let target_scroll_offset = self.scroll_idx as i32 * self.line_height as i32;
+        let scroll_delta = target_scroll_offset - self.scroll_offset;
+        if self.scroll_offset < target_scroll_offset {
+            self.scroll_offset += (f64::from(scroll_delta) / 3.0).ceil() as i32;
+        } else if self.scroll_offset > target_scroll_offset {
+            self.scroll_offset += (f64::from(scroll_delta) / 3.0).floor() as i32;
+        }
     }
 
     pub fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
