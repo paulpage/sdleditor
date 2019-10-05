@@ -114,7 +114,7 @@ impl Buffer {
         });
     }
 
-    fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
+    pub fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
         let mut undo_buffer = Vec::new();
 
         if y1 == y2 {
@@ -136,7 +136,7 @@ impl Buffer {
         undo_buffer.join("\n")
     }
 
-    fn do_insert(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
+    pub fn do_insert(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
         let l = self.contents.remove(y);
         let (start, end) = l.split_at(x);
         self.contents.insert(y, start.to_string());

@@ -1,4 +1,7 @@
 extern crate sdl2;
+extern crate clipboard;
+
+use clipboard::{ClipboardContext, ClipboardProvider};
 
 use std::cmp::{max, min};
 use std::env;
@@ -19,7 +22,6 @@ mod buffer;
 use buffer::{Buffer};
 
 fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut canvas: &mut WindowCanvas) {
-    let (_width, height) = canvas.window().size();
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
     canvas.clear();
 
@@ -119,8 +121,27 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "S-Left" => pane.cursor_left(buffer, true),
         "S-Right" => pane.cursor_right(buffer, true),
         "C-A" => pane.select_all(buffer),
+        "C-C" => {
+            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+            let (x1, y1, x2, y2) = pane.get_selection();
+            let s = buffer.do_delete(x1, y1, x2, y2);
+            buffer.do_insert(x1, y1, s.clone());
+            ctx.set_contents(s).unwrap();
+        }
         "C-Q" => return true,
         "C-S" => buffer.save(),
+        "C-V" => {
+            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+            if let Ok(s) = ctx.get_contents() {
+                buffer.insert_text(pane.cursor_x, pane.cursor_y, s);
+            }
+        }
+        "C-X" => {
+            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+            let (x1, y1, x2, y2) = pane.get_selection();
+            let s = buffer.do_delete(x1, y1, x2, y2);
+            ctx.set_contents(s).unwrap();
+        }
         "C-Z" => buffer.undo(),
         "C-S-Z" => buffer.redo(),
         "C-S-\\" => {
@@ -133,6 +154,8 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
 }
 
 fn insert_text(pane: &mut Pane, buffer: &mut Buffer, text: String) {
+    let (x1, y1, x2, y2) = pane.get_selection();
+    buffer.delete_text(x1, y1, x2, y2);
     buffer.insert_text(pane.cursor_x, pane.cursor_y, text.clone());
     pane.cursor_x += text.len();
     pane.set_selection(false);
@@ -156,11 +179,11 @@ fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
     }
 }
 
-fn next<T>(list: &Vec<T>, idx: usize) -> usize {
+fn next<T>(list: &[T], idx: usize) -> usize {
     if idx < list.len() - 1 { idx + 1 } else { 0 }
 }
 
-fn prev<T>(list: &Vec<T>, idx: usize) -> usize {
+fn prev<T>(list: &[T], idx: usize) -> usize {
     if idx > 0 { idx - 1 } else { list.len() - 1 }
 }
 
