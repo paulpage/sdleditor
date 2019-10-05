@@ -66,21 +66,20 @@ impl<'a> Pane<'a> {
 
     pub fn draw(&mut self, canvas: &mut WindowCanvas, padding: i32, is_active: bool) {
         // Background
-        let color = if is_active {
+        let border_color = if is_active {
             Color::RGBA(152, 151, 26, 255)
         } else {
             Color::RGBA(0, 0, 0, 255)
         };
-        canvas.set_draw_color(color);
-        let rect = Rect::new(self.x, self.y, self.w, self.h);
+        canvas.set_draw_color(border_color);
+        let rect = Rect::new(
+            self.x - padding,
+            self.y - padding,
+            self.w + padding as u32 * 2,
+            self.h + padding as u32 * 2);
         canvas.fill_rect(rect).unwrap();
         canvas.set_draw_color(Color::RGBA(20, 20, 20, 255));
-        let rect = Rect::new(
-            self.x + padding,
-            self.y + padding,
-            max(0, self.w as i32 - padding * 2) as u32,
-            max(0, self.h as i32 - padding * 2) as u32
-        );
+        let rect = Rect::new(self.x, self.y, self.w, self.h);
         canvas.fill_rect(rect).unwrap();
 
         // Calculate smooth scrolling
@@ -146,6 +145,23 @@ impl<'a> Pane<'a> {
             }
         }
         length
+    }
+
+    pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
+        let num_lines = (f64::from(self.h) / f64::from(self.line_height)).ceil() as usize;
+        let first = max(0, self.scroll_idx as i32 - num_lines as i32) as usize;
+        let last = min(buffer.contents.len(), self.scroll_idx + num_lines);
+        (first, last)
+    }
+
+    pub fn select_all(&mut self, buffer: &Buffer) {
+        self.sel_y = 0;
+        self.sel_x = 0;
+        self.cursor_y = max(0, buffer.contents.len() as i32 - 1) as usize;
+        self.cursor_x = buffer.contents[self.cursor_y].len();
+        let (first, _last) = self.get_lines_on_screen(buffer);
+        self.scroll_idx = first;
+        self.set_selection(true);
     }
 
     pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {

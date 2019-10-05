@@ -26,34 +26,13 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
     let padding: i32 = 5;
     for (j, pane) in &mut panes.iter_mut().enumerate() {
         pane.draw(&mut canvas, padding, j == pane_idx);
+        let bar_height: i32 = pane.line_height as i32 + padding * 2;
 
         let buffer = &buffers[pane.buffer_id];
 
-        let bar_height: i32 = pane.line_height as i32 + padding * 2;
-        // Draw the bar
-        let rect = Rect::new(padding, padding, max(0, pane.w as i32 - padding) as u32, bar_height as u32);
-        pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
-        let dirty_text = if buffer.is_dirty { "*" } else { "" };
-        let bar_text = format!("{} {}", dirty_text, &buffer.name);
-        pane.draw_text(
-            &mut canvas,
-            Color::RGBA(251, 241, 199, 255),
-            padding * 2,
-            padding * 2,
-            &bar_text,
-        );
 
         // We only want to render the lines that are actually on the screen.
-        let first_line = max(
-            0,
-            pane.scroll_idx as i32
-            - (f64::from(height) / f64::from(pane.line_height)).ceil() as i32,
-        ) as usize;
-        let last_line = min(
-            buffer.contents.len(),
-            pane.scroll_idx
-            + (f64::from(height) / f64::from(pane.line_height)).ceil() as usize,
-        );
+        let (first_line, last_line) = pane.get_lines_on_screen(&buffer);
 
         // Draw the contents of the file and the cursor.
         for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate().map(|(i, entry)| (i + first_line, entry)) {
@@ -109,6 +88,19 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
             }
 
         }
+
+        // Draw the bar
+        let rect = Rect::new(0, 0, pane.w, bar_height as u32);
+        pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
+        let dirty_text = if buffer.is_dirty { "*" } else { "" };
+        let bar_text = format!("{} {}", dirty_text, &buffer.name);
+        pane.draw_text(
+            &mut canvas,
+            Color::RGBA(251, 241, 199, 255),
+            padding,
+            padding,
+            &bar_text,
+        );
     }
 }
 
@@ -126,17 +118,16 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "S-Down" => pane.cursor_down(1, buffer, true),
         "S-Left" => pane.cursor_left(buffer, true),
         "S-Right" => pane.cursor_right(buffer, true),
+        "C-A" => pane.select_all(buffer),
         "C-Q" => return true,
+        "C-S" => buffer.save(),
         "C-Z" => buffer.undo(),
         "C-S-Z" => buffer.redo(),
-        "C-S" => buffer.save(),
         "C-S-\\" => {
             buffer.print();
             return true;
         }
-        _ => {
-            println!("{}", kstr);
-        }
+        _ => {}
     }
     false
 }
@@ -165,7 +156,16 @@ fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
     }
 }
 
-fn arrange(panes: &mut Vec<Pane>, w: u32, h: u32) {
+fn next<T>(list: &Vec<T>, idx: usize) -> usize {
+    if idx < list.len() - 1 { idx + 1 } else { 0 }
+}
+
+fn prev<T>(list: &Vec<T>, idx: usize) -> usize {
+    if idx > 0 { idx - 1 } else { list.len() - 1 }
+}
+
+fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
+    let (w, h) = canvas.window().size();
 
     // let mut x = 0;
     // let mut y = 0;
@@ -178,15 +178,16 @@ fn arrange(panes: &mut Vec<Pane>, w: u32, h: u32) {
     //     y += 20;
     // }
 
+    let padding = 5;
     let pane_width = (f64::from(w) / panes.len() as f64).floor() as u32;
     let pane_height = h;
     let mut x = 0;
     let y = 0;
     for mut pane in &mut panes.iter_mut() {
-        pane.x = x;
-        pane.y = y;
-        pane.w = pane_width;
-        pane.h = pane_height;
+        pane.x = x + padding;
+        pane.y = y + padding;
+        pane.w = max(0, pane_width as i32 - (padding * 2) as i32) as u32;
+        pane.h = max(0, pane_height as i32 - (padding * 2) as i32) as u32;
         x += pane_width as i32;
     }
 }
@@ -218,12 +219,11 @@ fn main() {
         buffers.push(Buffer::new());
     }
 
-    let (width, height) = canvas.window().size();
     panes.push(Pane::new(
             ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
             PaneType::Buffer,
             0));
-    arrange(&mut panes, width, height);
+    arrange(&canvas, &mut panes);
 
     'mainloop: loop {
         for event in sdl_context.event_pump().unwrap().poll_iter() {
@@ -247,9 +247,19 @@ fn main() {
                                 ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
                                 PaneType::Buffer,
                                 0));
-                        let (w, h) = canvas.window().size();
-                        arrange(&mut panes, w, h);
+                        arrange(&canvas, &mut panes);
                         pane_idx += 1;
+                    }
+                    "C-B" => panes[pane_idx].buffer_id = next(&buffers, panes[pane_idx].buffer_id),
+                    "C-S-B" => panes[pane_idx].buffer_id = prev(&buffers, panes[pane_idx].buffer_id),
+                    "C-J" => pane_idx = next(&panes, pane_idx),
+                    "C-K" => pane_idx = prev(&panes, pane_idx),
+                    "C-W" => {
+                        if panes.len() > 1 {
+                            panes.remove(pane_idx);
+                            pane_idx = prev(&panes, pane_idx);
+                            arrange(&canvas, &mut panes);
+                        }
                     }
                     _ => {
                         let pane = &mut panes[pane_idx];
@@ -288,6 +298,6 @@ fn main() {
         draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
 
         sleep(Duration::from_millis(5));
-        canvas.present(); 
+        canvas.present();
     }
 }
