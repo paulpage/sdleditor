@@ -164,6 +164,13 @@ impl<'a> Pane<'a> {
         self.set_selection(true);
     }
 
+    pub fn select_line(&mut self, line: usize, buffer: &Buffer) {
+        self.cursor_y = min(line, max(0, buffer.contents.len() as i32 - 1) as usize);
+        self.sel_y = self.cursor_y;
+        self.cursor_x = buffer.contents[self.sel_y].len();
+        self.sel_x = 0;
+    }
+
     pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
         self.cursor_y = max(0, self.cursor_y as i32 - num as i32) as usize;
         self.cursor_x = max(

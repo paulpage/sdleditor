@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions};
 use std::io::{self, BufReader, BufRead, BufWriter, Write};
 
 pub struct Buffer {
@@ -156,8 +156,6 @@ impl Buffer {
         (x, y)
     }
  
-    // TODO: Still acts funky, try typing "Hello, World!" into an empty document,
-    // deleting some of the middle, then undoing
     pub fn undo(&mut self) {
         if let Some(a) = self.undo_stack.pop() {
             match a.action_type {
@@ -203,7 +201,7 @@ impl Buffer {
     pub fn next_char(&self, x: usize, y: usize) -> (usize, usize) {
         if x < self.contents[y].len() {
             return (x + 1, y);
-        } else if y < self.contents.len() {
+        } else if y < self.contents.len() - 1 {
             return (0, y + 1);
         }
         (x, y)

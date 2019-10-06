@@ -21,6 +21,9 @@ use pane::{Pane, PaneType};
 mod buffer;
 use buffer::{Buffer};
 
+mod file_manager;
+use file_manager::FileManager;
+
 fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut canvas: &mut WindowCanvas) {
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
     canvas.clear();
@@ -128,7 +131,6 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
             buffer.do_insert(x1, y1, s.clone());
             ctx.set_contents(s).unwrap();
         }
-        "C-Q" => return true,
         "C-S" => buffer.save(),
         "C-V" => {
             let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
@@ -248,15 +250,22 @@ fn main() {
             0));
     arrange(&canvas, &mut panes);
 
+    let mut ctrl_pressed = false;
+    let mut alt_pressed = false;
+    // let mut current_search = String::new();
+    let mut fm = FileManager::new();
+
     'mainloop: loop {
         for event in sdl_context.event_pump().unwrap().poll_iter() {
             if let Event::KeyDown { keycode: Some(kc), keymod, .. } = event {
                 let mut key_string = String::new();
                 if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
                     key_string.push_str("C-");
+                    ctrl_pressed = true;
                 }
                 if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
                     key_string.push_str("A-");
+                    alt_pressed = true;
                 }
                 if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
                     key_string.push_str("S-");
@@ -277,6 +286,21 @@ fn main() {
                     "C-S-B" => panes[pane_idx].buffer_id = prev(&buffers, panes[pane_idx].buffer_id),
                     "C-J" => pane_idx = next(&panes, pane_idx),
                     "C-K" => pane_idx = prev(&panes, pane_idx),
+                    "C-Q" => break 'mainloop,
+                    "C-O" => {
+                        let mut buffer = Buffer::new();
+                        let mut pane = Pane::new(
+                                ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
+                                PaneType::FileManager,
+                                0);
+                        let current_dir = env::current_dir().unwrap();
+                        fm.update(&mut pane, &mut buffer, current_dir.to_str().unwrap());
+                        pane.buffer_id = buffers.len();
+                        pane_idx = panes.len();
+                        buffers.push(buffer);
+                        panes.push(pane);
+                        arrange(&canvas, &mut panes);
+                    }
                     "C-W" => {
                         if panes.len() > 1 {
                             panes.remove(pane_idx);
@@ -287,8 +311,15 @@ fn main() {
                     _ => {
                         let pane = &mut panes[pane_idx];
                         let buffer = &mut buffers[pane.buffer_id];
-                        if handle_local_keystroke(pane, buffer, kstr) {
-                            break 'mainloop;
+                        match pane.pane_type {
+                            PaneType::Buffer => {
+                                if handle_local_keystroke(pane, buffer, kstr) {
+                                    break 'mainloop;
+                                }
+                            }
+                            PaneType::FileManager => {
+                                fm.handle_key(pane, buffer, kstr);
+                            }
                         }
                     }
                 }
@@ -297,13 +328,38 @@ fn main() {
                 let buffer = &mut buffers[pane.buffer_id];
                 match event {
                     Event::Quit { .. } => break 'mainloop,
+                    Event::KeyUp { keymod, .. } => {
+                        if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
+                            ctrl_pressed = false;
+                        }
+                        if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
+                            alt_pressed = false;
+                        }
+                    }
                     Event::Window { win_event, .. } => {
                         if let WindowEvent::Resized(w, h) = win_event {
                             pane.w = max(0, w - 40) as u32;
                             pane.h = max(0, h - 40) as u32;
                         }
                     }
-                    Event::TextInput { text, .. } => insert_text(pane, buffer, text),
+                    Event::TextInput { text, .. } => {
+                        match pane.pane_type {
+                            PaneType::Buffer => {
+                                if !ctrl_pressed && !alt_pressed {
+                                    insert_text(pane, buffer, text);
+                                }
+                            }
+                            PaneType::FileManager => {
+                                fm.current_search.push_str(&text);
+                                buffer.name = fm.current_search.clone();
+                                for (i, line) in buffer.contents.iter().enumerate() {
+                                    if line.starts_with(&fm.current_search) {
+                                        pane.select_line(i, &buffer);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Event::MouseButtonDown { x, y, .. } => set_selection_from_screen(pane, buffer, x, y, false),
                     Event::MouseMotion { mousestate, x, y, .. } => {
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
