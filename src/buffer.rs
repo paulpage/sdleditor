@@ -1,5 +1,5 @@
-use std::fs::{OpenOptions};
-use std::io::{self, BufReader, BufRead, BufWriter, Write};
+use std::fs::OpenOptions;
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
 pub struct Buffer {
     pub name: String,
@@ -26,7 +26,6 @@ pub struct Action {
 }
 
 impl Buffer {
-
     pub fn new() -> Self {
         let mut buffer = Self {
             contents: Vec::new(),
@@ -155,7 +154,7 @@ impl Buffer {
         self.contents[y].push_str(end);
         (x, y)
     }
- 
+
     pub fn undo(&mut self) {
         if let Some(a) = self.undo_stack.pop() {
             match a.action_type {

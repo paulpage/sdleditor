@@ -1,7 +1,5 @@
-extern crate sdl2;
 extern crate clipboard;
-
-use clipboard::{ClipboardContext, ClipboardProvider};
+extern crate sdl2;
 
 use std::cmp::{max, min};
 use std::env;
@@ -9,7 +7,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use sdl2::event::{Event, WindowEvent};
-use sdl2::keyboard::{Mod};
+use sdl2::keyboard::Mod;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -19,12 +17,17 @@ mod pane;
 use pane::{Pane, PaneType};
 
 mod buffer;
-use buffer::{Buffer};
+use buffer::Buffer;
 
 mod file_manager;
 use file_manager::FileManager;
 
-fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut canvas: &mut WindowCanvas) {
+fn draw(
+    panes: &mut Vec<Pane>,
+    buffers: &mut Vec<Buffer>,
+    pane_idx: usize,
+    mut canvas: &mut WindowCanvas,
+) {
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
     canvas.clear();
 
@@ -35,15 +38,18 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
 
         let buffer = &buffers[pane.buffer_id];
 
-
         // We only want to render the lines that are actually on the screen.
         let (first_line, last_line) = pane.get_lines_on_screen(&buffer);
 
         // Draw the contents of the file and the cursor.
-        for (i, entry) in buffer.contents[first_line..last_line].iter().enumerate().map(|(i, entry)| (i + first_line, entry)) {
-
+        for (i, entry) in buffer.contents[first_line..last_line]
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| (i + first_line, entry))
+        {
             let midpoint = min(pane.cursor_x, entry.len());
-            let line_y = bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
+            let line_y =
+                bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
 
             // Draw the selection
             let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = pane.get_selection();
@@ -63,7 +69,8 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
                     padding * 2 + x1 as i32,
                     line_y,
                     (x2 - x1) as u32,
-                    pane.line_height as u32);
+                    pane.line_height as u32,
+                );
                 pane.fill_rect(&mut canvas, color, rect);
             }
 
@@ -73,13 +80,15 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2,
                 line_y,
-                &entry[0..midpoint]);
+                &entry[0..midpoint],
+            );
             pane.draw_text(
                 &mut canvas,
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2 + midpoint_width,
                 line_y,
-                &entry[midpoint..entry.len()]);
+                &entry[midpoint..entry.len()],
+            );
 
             // Draw the cursor
             if j == pane_idx && i == pane.cursor_y {
@@ -87,11 +96,10 @@ fn draw(panes: &mut Vec<Pane>, buffers: &mut Vec<Buffer>, pane_idx: usize, mut c
                     padding * 2 + midpoint_width as i32,
                     line_y,
                     2,
-                    pane.line_height as u32
+                    pane.line_height as u32,
                 );
                 pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
             }
-
         }
 
         // Draw the bar
@@ -124,26 +132,10 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "S-Left" => pane.cursor_left(buffer, true),
         "S-Right" => pane.cursor_right(buffer, true),
         "C-A" => pane.select_all(buffer),
-        "C-C" => {
-            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-            let (x1, y1, x2, y2) = pane.get_selection();
-            let s = buffer.do_delete(x1, y1, x2, y2);
-            buffer.do_insert(x1, y1, s.clone());
-            ctx.set_contents(s).unwrap();
-        }
+        "C-C" => pane.clipboard_copy(buffer),
         "C-S" => buffer.save(),
-        "C-V" => {
-            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-            if let Ok(s) = ctx.get_contents() {
-                buffer.insert_text(pane.cursor_x, pane.cursor_y, s);
-            }
-        }
-        "C-X" => {
-            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-            let (x1, y1, x2, y2) = pane.get_selection();
-            let s = buffer.do_delete(x1, y1, x2, y2);
-            ctx.set_contents(s).unwrap();
-        }
+        "C-V" => pane.clipboard_paste(buffer),
+        "C-X" => pane.clipboard_cut(buffer),
         "C-Z" => buffer.undo(),
         "C-S-Z" => buffer.redo(),
         "C-S-\\" => {
@@ -163,7 +155,13 @@ fn insert_text(pane: &mut Pane, buffer: &mut Buffer, text: String) {
     pane.set_selection(false);
 }
 
-fn set_selection_from_screen(pane: &mut Pane, buffer: &mut Buffer, x: i32, y: i32, extend_selection: bool) {
+fn set_selection_from_screen(
+    pane: &mut Pane,
+    buffer: &mut Buffer,
+    x: i32,
+    y: i32,
+    extend_selection: bool,
+) {
     let (x_idx, y_idx) = pane.get_position_from_screen(x, y, buffer);
     pane.cursor_x = x_idx;
     pane.cursor_y = y_idx;
@@ -182,11 +180,19 @@ fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
 }
 
 fn next<T>(list: &[T], idx: usize) -> usize {
-    if idx < list.len() - 1 { idx + 1 } else { 0 }
+    if idx < list.len() - 1 {
+        idx + 1
+    } else {
+        0
+    }
 }
 
 fn prev<T>(list: &[T], idx: usize) -> usize {
-    if idx > 0 { idx - 1 } else { list.len() - 1 }
+    if idx > 0 {
+        idx - 1
+    } else {
+        list.len() - 1
+    }
 }
 
 fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
@@ -228,7 +234,8 @@ fn main() {
         .maximized()
         .opengl()
         .build()
-        .map_err(|e| e.to_string()).unwrap();
+        .map_err(|e| e.to_string())
+        .unwrap();
     let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
 
     let mut buffers: Vec<Buffer> = Vec::new();
@@ -245,9 +252,12 @@ fn main() {
     }
 
     panes.push(Pane::new(
-            ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-            PaneType::Buffer,
-            0));
+        ttf_context
+            .load_font("data/LiberationSans-Regular.ttf", 16)
+            .unwrap(),
+        PaneType::Buffer,
+        0,
+    ));
     arrange(&canvas, &mut panes);
 
     let mut ctrl_pressed = false;
@@ -257,7 +267,12 @@ fn main() {
 
     'mainloop: loop {
         for event in sdl_context.event_pump().unwrap().poll_iter() {
-            if let Event::KeyDown { keycode: Some(kc), keymod, .. } = event {
+            if let Event::KeyDown {
+                keycode: Some(kc),
+                keymod,
+                ..
+            } = event
+            {
                 let mut key_string = String::new();
                 if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
                     key_string.push_str("C-");
@@ -276,23 +291,31 @@ fn main() {
                 match kstr {
                     "C-'" => {
                         panes.push(Pane::new(
-                                ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-                                PaneType::Buffer,
-                                0));
+                            ttf_context
+                                .load_font("data/LiberationSans-Regular.ttf", 16)
+                                .unwrap(),
+                            PaneType::Buffer,
+                            0,
+                        ));
                         arrange(&canvas, &mut panes);
                         pane_idx += 1;
                     }
                     "C-B" => panes[pane_idx].buffer_id = next(&buffers, panes[pane_idx].buffer_id),
-                    "C-S-B" => panes[pane_idx].buffer_id = prev(&buffers, panes[pane_idx].buffer_id),
+                    "C-S-B" => {
+                        panes[pane_idx].buffer_id = prev(&buffers, panes[pane_idx].buffer_id)
+                    }
                     "C-J" => pane_idx = next(&panes, pane_idx),
                     "C-K" => pane_idx = prev(&panes, pane_idx),
                     "C-Q" => break 'mainloop,
                     "C-O" => {
                         let mut buffer = Buffer::new();
                         let mut pane = Pane::new(
-                                ttf_context.load_font("data/LiberationSans-Regular.ttf", 16).unwrap(),
-                                PaneType::FileManager,
-                                0);
+                            ttf_context
+                                .load_font("data/LiberationSans-Regular.ttf", 16)
+                                .unwrap(),
+                            PaneType::FileManager,
+                            0,
+                        );
                         let current_dir = env::current_dir().unwrap();
                         fm.update(&mut pane, &mut buffer, current_dir.to_str().unwrap());
                         pane.buffer_id = buffers.len();
@@ -342,34 +365,35 @@ fn main() {
                             pane.h = max(0, h - 40) as u32;
                         }
                     }
-                    Event::TextInput { text, .. } => {
-                        match pane.pane_type {
-                            PaneType::Buffer => {
-                                if !ctrl_pressed && !alt_pressed {
-                                    insert_text(pane, buffer, text);
-                                }
+                    Event::TextInput { text, .. } => match pane.pane_type {
+                        PaneType::Buffer => {
+                            if !ctrl_pressed && !alt_pressed {
+                                insert_text(pane, buffer, text);
                             }
-                            PaneType::FileManager => {
-                                fm.current_search.push_str(&text);
-                                buffer.name = fm.current_search.clone();
-                                for (i, line) in buffer.contents.iter().enumerate() {
-                                    if line.starts_with(&fm.current_search) {
-                                        pane.select_line(i, &buffer);
-                                    }
+                        }
+                        PaneType::FileManager => {
+                            fm.current_search.push_str(&text);
+                            buffer.name = fm.current_search.clone();
+                            for (i, line) in buffer.contents.iter().enumerate() {
+                                if line.starts_with(&fm.current_search) {
+                                    pane.select_line(i, &buffer);
                                 }
                             }
                         }
+                    },
+                    Event::MouseButtonDown { x, y, .. } => {
+                        set_selection_from_screen(pane, buffer, x, y, false)
                     }
-                    Event::MouseButtonDown { x, y, .. } => set_selection_from_screen(pane, buffer, x, y, false),
-                    Event::MouseMotion { mousestate, x, y, .. } => {
+                    Event::MouseMotion {
+                        mousestate, x, y, ..
+                    } => {
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
                             set_selection_from_screen(pane, buffer, x, y, true);
                         }
                     }
                     Event::MouseWheel { y, .. } => scroll(pane, buffer, y),
-                    Event::KeyDown { .. } => {
-                    },
-                    _ => {},
+                    Event::KeyDown { .. } => {}
+                    _ => {}
                 }
             }
         }

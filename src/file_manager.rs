@@ -1,5 +1,5 @@
-use std::fs;
 use std::env;
+use std::fs;
 
 use crate::buffer::Buffer;
 use crate::pane::{Pane, PaneType};
@@ -15,7 +15,6 @@ pub struct FileManager {
 }
 
 impl FileManager {
-
     pub fn new() -> Self {
         Self {
             current_search: String::new(),
@@ -40,11 +39,11 @@ impl FileManager {
             });
         }
         for entry in &self.entries {
-            buffer.contents.push(
-                format!(
-                    "{}{}",
-                    &entry.name,
-                    if entry.is_dir { "/" } else { "" }));
+            buffer.contents.push(format!(
+                "{}{}",
+                &entry.name,
+                if entry.is_dir { "/" } else { "" }
+            ));
         }
         pane.select_line(0, &buffer);
     }
@@ -52,7 +51,7 @@ impl FileManager {
     pub fn handle_key(&mut self, mut pane: &mut Pane, mut buffer: &mut Buffer, kstr: &str) {
         match kstr {
             "Backspace" => {
-                if self.current_search.len() > 0 {
+                if !self.current_search.is_empty() {
                     self.current_search.remove(self.current_search.len() - 1);
                     buffer.name = self.current_search.clone();
                 }

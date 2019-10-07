@@ -1,10 +1,12 @@
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::cmp::{min, max};
+use sdl2::pixels::Color;
+use sdl2::rect::Rect;
 use sdl2::render::{Texture, TextureQuery, WindowCanvas};
 use sdl2::ttf::Font;
-use sdl2::rect::Rect;
-use sdl2::pixels::Color;
+use std::cmp::{max, min};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use clipboard::{ClipboardContext, ClipboardProvider};
 
 // mod buffer;
 use crate::buffer::Buffer;
@@ -42,7 +44,6 @@ pub struct Pane<'a> {
 }
 
 impl<'a> Pane<'a> {
-
     pub fn new(font: Font<'a, 'static>, pane_type: PaneType, buffer_id: usize) -> Self {
         Pane {
             pane_type,
@@ -76,7 +77,8 @@ impl<'a> Pane<'a> {
             self.x - padding,
             self.y - padding,
             self.w + padding as u32 * 2,
-            self.h + padding as u32 * 2);
+            self.h + padding as u32 * 2,
+        );
         canvas.fill_rect(rect).unwrap();
         canvas.set_draw_color(Color::RGBA(20, 20, 20, 255));
         let rect = Rect::new(self.x, self.y, self.w, self.h);
@@ -103,29 +105,28 @@ impl<'a> Pane<'a> {
         }
     }
 
-    pub fn draw_text(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, text: &str) -> i32 {
+    pub fn draw_text(
+        &mut self,
+        canvas: &mut WindowCanvas,
+        color: Color,
+        x: i32,
+        y: i32,
+        text: &str,
+    ) -> i32 {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
             for c in text.chars() {
-                let key = FontCacheKey {c, color };
-                let texture = self
-                    .font_cache
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        let surface = self
-                            .font
-                            .render(&c.to_string())
-                            .blended(color)
-                            .unwrap();
-                        let texture = canvas
-                            .texture_creator()
-                            .create_texture_from_surface(&surface)
-                            .unwrap();
-                        let resource = Rc::new(texture);
-                        self.font_cache.insert(key, resource.clone());
-                        resource
-                    });
+                let key = FontCacheKey { c, color };
+                let texture = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
+                    let surface = self.font.render(&c.to_string()).blended(color).unwrap();
+                    let texture = canvas
+                        .texture_creator()
+                        .create_texture_from_surface(&surface)
+                        .unwrap();
+                    let resource = Rc::new(texture);
+                    self.font_cache.insert(key, resource.clone());
+                    resource
+                });
 
                 let TextureQuery {
                     width: mut w,
@@ -145,6 +146,28 @@ impl<'a> Pane<'a> {
             }
         }
         length
+    }
+
+    pub fn clipboard_paste(&mut self, buffer: &mut Buffer) {
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        if let Ok(s) = ctx.get_contents() {
+            buffer.insert_text(self.cursor_x, self.cursor_y, s);
+        }
+    }
+
+    pub fn clipboard_copy(&mut self, buffer: &mut Buffer) {
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        let (x1, y1, x2, y2) = self.get_selection();
+        let s = buffer.do_delete(x1, y1, x2, y2);
+        buffer.do_insert(x1, y2, s.clone());
+        ctx.set_contents(s).unwrap();
+    }
+
+    pub fn clipboard_cut(&mut self, buffer: &mut Buffer) {
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        let (x1, y1, x2, y2) = self.get_selection();
+        let s = buffer.do_delete(x1, y1, x2, y2);
+        ctx.set_contents(s).unwrap();
     }
 
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
@@ -261,8 +284,7 @@ impl<'a> Pane<'a> {
     // returns those corners in order: (x1, y1, x2, y2)
     // where x1 and y1 are earlier in the buffer than x2 and y2
     pub fn get_selection(&self) -> (usize, usize, usize, usize) {
-        if self.sel_y > self.cursor_y || self.sel_y == self.cursor_y
-            && self.sel_x > self.cursor_x {
+        if self.sel_y > self.cursor_y || self.sel_y == self.cursor_y && self.sel_x > self.cursor_x {
             return (self.cursor_x, self.cursor_y, self.sel_x, self.sel_y);
         }
         (self.sel_x, self.sel_y, self.cursor_x, self.cursor_y)
@@ -279,18 +301,18 @@ impl<'a> Pane<'a> {
         }
         self.set_selection(false);
     }
-    
+
     // Get the buffer indices based on a screen position. This can be used to set
     // the cursor position with the mouse.
     pub fn get_position_from_screen(&self, x: i32, y: i32, buffer: &Buffer) -> (usize, usize) {
         let padding = 5;
         let bar_height: u32 = (self.line_height + padding * 2) as u32;
-        let mut y_idx = max(((f64::from(y)
-                    - f64::from(self.y)
-                    - f64::from(padding)
-                    - f64::from(bar_height))
+        let mut y_idx = max(
+            ((f64::from(y) - f64::from(self.y) - f64::from(padding) - f64::from(bar_height))
                 / f64::from(self.line_height))
-            .floor() as i32, 0) as usize
+            .floor() as i32,
+            0,
+        ) as usize
             + self.scroll_idx;
         y_idx = min(y_idx, buffer.contents.len() - 1);
         let max_x_idx = buffer.contents[y_idx].len();
@@ -300,8 +322,15 @@ impl<'a> Pane<'a> {
         let mut last_length = length;
         while length < x && (x_idx as usize) < max_x_idx {
             last_length = length;
-            let (char_x, _) =  self.font
-                .size_of(&buffer.contents[y_idx].chars().nth(x_idx).unwrap().to_string())
+            let (char_x, _) = self
+                .font
+                .size_of(
+                    &buffer.contents[y_idx]
+                        .chars()
+                        .nth(x_idx)
+                        .unwrap()
+                        .to_string(),
+                )
                 .unwrap();
             length += char_x as i32;
             x_idx += 1;
