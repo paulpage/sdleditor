@@ -413,10 +413,16 @@ fn main() {
             }
         }
 
-        // if is_dirty {
-        draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
-        canvas.present();
-        // }
+        for pane in &panes {
+            if pane.scroll_offset != pane.scroll_idx as i32 * pane.line_height as i32 {
+                is_dirty = true;
+            }
+        }
+
+        if is_dirty {
+            draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
+            canvas.present();
+        }
 
         sleep(Duration::from_millis(5));
     }
