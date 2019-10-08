@@ -25,7 +25,7 @@ impl FileManager {
     pub fn update(&mut self, pane: &mut Pane, buffer: &mut Buffer, path: &str) {
         self.entries.clear();
         self.current_search.clear();
-        buffer.contents.clear();
+        buffer.clear();
         self.entries.push(FileManagerEntry {
             name: "..".to_string(),
             is_dir: true,
@@ -39,7 +39,7 @@ impl FileManager {
             });
         }
         for entry in &self.entries {
-            buffer.contents.push(format!(
+            buffer.push_line(format!(
                 "{}{}",
                 &entry.name,
                 if entry.is_dir { "/" } else { "" }

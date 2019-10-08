@@ -13,6 +13,9 @@ use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
 
+extern crate unicode_segmentation;
+use unicode_segmentation::UnicodeSegmentation;
+
 mod pane;
 use pane::{Pane, PaneType};
 
@@ -47,7 +50,9 @@ fn draw(
             .enumerate()
             .map(|(i, entry)| (i + first_line, entry))
         {
-            let midpoint = min(pane.cursor_x, entry.len());
+            let uentry =
+                UnicodeSegmentation::graphemes(entry.as_str(), true).collect::<Vec<&str>>();
+            let midpoint = min(pane.cursor_x, uentry.len());
             let line_y =
                 bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
 
@@ -58,20 +63,26 @@ fn draw(
                 let mut x2: u32 = pane.text_length(&buffer.contents[i]);
                 if !buffer.contents[i].is_empty() {
                     if i == sel_start_y {
-                        x1 = pane.text_length(&buffer.contents[i][..sel_start_x]);
+                        x1 = pane.text_length(
+                            &buffer.line_graphemes(i)[..sel_start_x].concat().to_string(),
+                        );
                     }
                     if i == sel_end_y {
-                        x2 = pane.text_length(&buffer.contents[i][..sel_end_x]);
+                        x2 = pane.text_length(
+                            &buffer.line_graphemes(i)[..sel_end_x].concat().to_string(),
+                        );
                     }
                 }
                 let color = Color::RGBA(146, 131, 116, 0);
-                let rect = Rect::new(
-                    padding * 2 + x1 as i32,
-                    line_y,
-                    (x2 - x1) as u32,
-                    pane.line_height as u32,
-                );
-                pane.fill_rect(&mut canvas, color, rect);
+                if x2 > x1 {
+                    let rect = Rect::new(
+                        padding * 2 + x1 as i32,
+                        line_y,
+                        (x2 - x1) as u32,
+                        pane.line_height as u32,
+                    );
+                    pane.fill_rect(&mut canvas, color, rect);
+                }
             }
 
             // Draw the text
@@ -80,14 +91,14 @@ fn draw(
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2,
                 line_y,
-                &entry[0..midpoint],
+                &uentry[0..midpoint].concat(),
             );
             pane.draw_text(
                 &mut canvas,
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2 + midpoint_width,
                 line_y,
-                &entry[midpoint..entry.len()],
+                &uentry[midpoint..].concat(),
             );
 
             // Draw the cursor
@@ -172,8 +183,8 @@ fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
     let candidate = pane.scroll_idx as i32 - (y * 3);
     if candidate < 0 {
         pane.scroll_idx = 0;
-    } else if candidate > buffer.contents.len() as i32 {
-        pane.scroll_idx = buffer.contents.len();
+    } else if candidate > buffer.len() as i32 {
+        pane.scroll_idx = buffer.len();
     } else {
         pane.scroll_idx = candidate as usize;
     }
@@ -262,11 +273,15 @@ fn main() {
 
     let mut ctrl_pressed = false;
     let mut alt_pressed = false;
-    // let mut current_search = String::new();
     let mut fm = FileManager::new();
+    // Don't redraw unless we have to
+    let mut is_dirty;
 
     'mainloop: loop {
+        // let t = Instant::now();
+        is_dirty = false;
         for event in sdl_context.event_pump().unwrap().poll_iter() {
+            is_dirty = true;
             if let Event::KeyDown {
                 keycode: Some(kc),
                 keymod,
@@ -398,9 +413,11 @@ fn main() {
             }
         }
 
+        // if is_dirty {
         draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
+        canvas.present();
+        // }
 
         sleep(Duration::from_millis(5));
-        canvas.present();
     }
 }

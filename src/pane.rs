@@ -8,6 +8,9 @@ use std::rc::Rc;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 
+extern crate unicode_segmentation;
+use unicode_segmentation::UnicodeSegmentation;
+
 // mod buffer;
 use crate::buffer::Buffer;
 
@@ -18,7 +21,7 @@ pub enum PaneType {
 
 #[derive(Hash, PartialEq)]
 struct FontCacheKey {
-    c: char,
+    c: String,
     color: Color,
 }
 
@@ -115,8 +118,11 @@ impl<'a> Pane<'a> {
     ) -> i32 {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
-            for c in text.chars() {
-                let key = FontCacheKey { c, color };
+            for c in UnicodeSegmentation::graphemes(text, true) {
+                let key = FontCacheKey {
+                    c: c.to_string(),
+                    color,
+                };
                 let texture = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
                     let surface = self.font.render(&c.to_string()).blended(color).unwrap();
                     let texture = canvas
@@ -173,41 +179,41 @@ impl<'a> Pane<'a> {
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
         let num_lines = (f64::from(self.h) / f64::from(self.line_height)).ceil() as usize;
         let first = max(0, self.scroll_idx as i32 - num_lines as i32) as usize;
-        let last = min(buffer.contents.len(), self.scroll_idx + num_lines);
+        let last = min(buffer.len(), self.scroll_idx + num_lines);
         (first, last)
     }
 
     pub fn select_all(&mut self, buffer: &Buffer) {
         self.sel_y = 0;
         self.sel_x = 0;
-        self.cursor_y = max(0, buffer.contents.len() as i32 - 1) as usize;
-        self.cursor_x = buffer.contents[self.cursor_y].len();
+        self.cursor_y = max(0, buffer.len() as i32 - 1) as usize;
+        self.cursor_x = buffer.line_len(self.cursor_y);
         let (first, _last) = self.get_lines_on_screen(buffer);
         self.scroll_idx = first;
         self.set_selection(true);
     }
 
     pub fn select_line(&mut self, line: usize, buffer: &Buffer) {
-        self.cursor_y = min(line, max(0, buffer.contents.len() as i32 - 1) as usize);
+        self.cursor_y = min(line, max(0, buffer.len() as i32 - 1) as usize);
         self.sel_y = self.cursor_y;
-        self.cursor_x = buffer.contents[self.sel_y].len();
+        self.cursor_x = buffer.line_len(self.sel_y);
         self.sel_x = 0;
     }
 
     pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
         self.cursor_y = max(0, self.cursor_y as i32 - num as i32) as usize;
         self.cursor_x = max(
-            min(self.cursor_x, buffer.contents[self.cursor_y].len()),
-            min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
+            min(self.cursor_x, buffer.line_len(self.cursor_y)),
+            min(self.max_cursor_x, buffer.line_len(self.cursor_y)),
         );
         self.set_selection(extend_selection);
     }
 
     pub fn cursor_down(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        self.cursor_y = min(buffer.contents.len() - 1, self.cursor_y + num);
+        self.cursor_y = min(buffer.len() - 1, self.cursor_y + num);
         self.cursor_x = max(
-            min(self.cursor_x, buffer.contents[self.cursor_y].len()),
-            min(self.max_cursor_x, buffer.contents[self.cursor_y].len()),
+            min(self.cursor_x, buffer.line_len(self.cursor_y)),
+            min(self.max_cursor_x, buffer.line_len(self.cursor_y)),
         );
         self.set_selection(extend_selection);
     }
@@ -233,34 +239,30 @@ impl<'a> Pane<'a> {
     }
 
     pub fn scroll_down(&mut self, num: usize, buffer: &Buffer) {
-        self.scroll_idx = min(buffer.contents.len(), self.scroll_idx + num);
+        self.scroll_idx = min(buffer.len(), self.scroll_idx + num);
     }
 
     pub fn break_line(&mut self, buffer: &mut Buffer) {
-        let first_half = buffer.contents[self.cursor_y][0..self.cursor_x].to_string();
-        let last_half = buffer.contents[self.cursor_y][self.cursor_x..].to_string();
+        let mut g = buffer.line_graphemes(self.cursor_y);
+        let first_half = g
+            .drain(..self.cursor_x)
+            .collect::<Vec<&str>>()
+            .concat()
+            .to_string();
+        let last_half = g.concat().to_string();
         buffer.contents[self.cursor_y] = first_half;
         self.cursor_y += 1;
         self.cursor_x = 0;
         self.max_cursor_x = self.cursor_x;
-        buffer.contents.insert(self.cursor_y, last_half);
+        buffer.insert_line(self.cursor_y, last_half);
         self.set_selection(false);
     }
 
     pub fn remove_char(&mut self, mut buffer: &mut Buffer) {
-        if self.cursor_x > 0 {
-            if self.cursor_x <= buffer.contents[self.cursor_y].len() {
-                buffer.contents[self.cursor_y].remove(self.cursor_x - 1);
-            }
-            self.cursor_x -= 1;
-            self.max_cursor_x = self.cursor_x;
-            buffer.is_dirty = true;
-        } else if self.cursor_y > 0 {
-            let this_line = buffer.contents.remove(self.cursor_y);
-            self.cursor_y -= 1;
-            self.cursor_x = buffer.contents[self.cursor_y].len();
-            buffer.contents[self.cursor_y].push_str(&this_line);
-        }
+        let (x1, y1) = buffer.prev_char(self.cursor_x, self.cursor_y);
+        buffer.delete_text(x1, y1, self.cursor_x, self.cursor_y);
+        self.cursor_x = x1;
+        self.cursor_y = y1;
     }
 
     pub fn text_length(&self, text: &str) -> u32 {
@@ -314,8 +316,8 @@ impl<'a> Pane<'a> {
             0,
         ) as usize
             + self.scroll_idx;
-        y_idx = min(y_idx, buffer.contents.len() - 1);
-        let max_x_idx = buffer.contents[y_idx].len();
+        y_idx = min(y_idx, buffer.len() - 1);
+        let max_x_idx = buffer.line_len(y_idx);
 
         let mut length = self.x + padding;
         let mut x_idx = 0;

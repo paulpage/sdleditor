@@ -1,6 +1,9 @@
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
+extern crate unicode_segmentation;
+use unicode_segmentation::UnicodeSegmentation;
+
 pub struct Buffer {
     pub name: String,
     pub contents: Vec<String>,
@@ -34,7 +37,7 @@ impl Buffer {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         };
-        buffer.contents.push(String::new());
+        buffer.push_line(String::new());
         buffer
     }
 
@@ -54,12 +57,42 @@ impl Buffer {
             .unwrap();
         let reader = BufReader::new(file);
         for line in reader.lines() {
-            buffer.contents.push(line.unwrap());
+            buffer.push_line(line.unwrap());
         }
-        if buffer.contents.is_empty() {
-            buffer.contents.push(String::new());
+        if buffer.is_empty() {
+            buffer.push_line(String::new());
         }
         buffer
+    }
+
+    pub fn len(&self) -> usize {
+        self.contents.len()
+    }
+
+    pub fn line_len(&self, y: usize) -> usize {
+        UnicodeSegmentation::graphemes(self.contents[y].as_str(), true)
+            .collect::<Vec<&str>>()
+            .len()
+    }
+
+    pub fn line_graphemes(&self, y: usize) -> Vec<&str> {
+        UnicodeSegmentation::graphemes(self.contents[y].as_str(), true).collect::<Vec<&str>>()
+    }
+
+    pub fn clear(&mut self) {
+        self.contents.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.contents.is_empty()
+    }
+
+    pub fn push_line(&mut self, s: String) {
+        self.contents.push(s);
+    }
+
+    pub fn insert_line(&mut self, y: usize, s: String) {
+        self.contents.insert(y, s);
     }
 
     pub fn save(&mut self) {
@@ -116,42 +149,46 @@ impl Buffer {
     pub fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
         let mut undo_buffer = Vec::new();
 
+        let mut g1 = self.line_graphemes(y1);
+        let g2 = self.line_graphemes(y2);
         if y1 == y2 {
-            undo_buffer.push(self.contents[y1][x1..x2].to_string());
-            self.contents[y1].replace_range(x1..x2, "");
+            undo_buffer.push(g1.drain(x1..x2).collect::<Vec<&str>>().concat());
+            self.contents[y1] = g1.concat().to_string();
         } else {
-            let pre = self.contents[y1][..x1].to_string();
-            let npre = self.contents[y1][x1..].to_string();
-            let post = self.contents[y2][x2..].to_string();
-            let npost = self.contents[y2][..x2].to_string();
+            let pre = g1[..x1].concat().to_string();
+            let npre = g1[x1..].concat().to_string();
+            let post = g2[x2..].concat().to_string();
+            let npost = g2[..x2].concat().to_string();
             for _ in y1..=y2 {
                 undo_buffer.push(self.contents.remove(y1));
             }
             let end = undo_buffer.len() - 1;
-            undo_buffer[0] = npre.to_string();
+            undo_buffer[0] = npre;
             undo_buffer[end] = npost;
-            self.contents.insert(y1, format!("{}{}", pre, post));
+            self.insert_line(y1, format!("{}{}", pre, post));
         }
         undo_buffer.join("\n")
     }
 
     pub fn do_insert(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
-        let l = self.contents.remove(y);
-        let (start, end) = l.split_at(x);
-        self.contents.insert(y, start.to_string());
+        let mut l = self.line_graphemes(y);
+        let start = l.drain(..x).collect::<Vec<&str>>().concat().to_string();
+        let end = l.concat().to_string();
+        self.contents.remove(y);
+        self.insert_line(y, start);
         let mut x = x;
         let mut y = y;
         for c in text.chars() {
             if c == '\n' {
                 y += 1;
                 x = 0;
-                self.contents.insert(y, String::new());
+                self.insert_line(y, String::new());
             } else {
                 self.contents[y].push(c);
                 x += 1;
             }
         }
-        self.contents[y].push_str(end);
+        self.contents[y].push_str(&end);
         (x, y)
     }
 
@@ -198,9 +235,9 @@ impl Buffer {
     }
 
     pub fn next_char(&self, x: usize, y: usize) -> (usize, usize) {
-        if x < self.contents[y].len() {
+        if x < self.line_len(y) {
             return (x + 1, y);
-        } else if y < self.contents.len() - 1 {
+        } else if y < self.len() - 1 {
             return (0, y + 1);
         }
         (x, y)
@@ -210,7 +247,7 @@ impl Buffer {
         if x > 0 {
             return (x - 1, y);
         } else if y > 0 {
-            return (self.contents[y - 1].len(), y - 1);
+            return (self.line_len(y - 1), y - 1);
         }
         (x, y)
     }
