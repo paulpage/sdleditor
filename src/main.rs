@@ -106,14 +106,14 @@ fn draw(
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2,
                 line_y,
-                &uentry[0..midpoint].concat(),
+                &uentry[0..midpoint],
             );
             pane.draw_text(
                 &mut canvas,
                 Color::RGBA(251, 241, 199, 255),
                 padding * 2 + midpoint_width,
                 line_y,
-                &uentry[midpoint..].concat(),
+                &uentry[midpoint..],
             );
             println!("  Text: {:?}", Instant::now().duration_since(t));
             let t = Instant::now();
@@ -139,13 +139,16 @@ fn draw(
         let rect = Rect::new(0, 0, pane.w, bar_height as u32);
         pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
-        let bar_text = format!("{} {}", dirty_text, &buffer.name);
+        let bar_text = vec![dirty_text, " ", &buffer.name];
+        // let bar_text: Vec<&str> = Vec::new();
+        // bar_text.push(&format!("{} {}", dirty_text, &buffer.name));
+        // let bar_text = format!("{} {}", dirty_text, &buffer.name);
         pane.draw_text(
             &mut canvas,
             Color::RGBA(251, 241, 199, 255),
             padding,
             padding,
-            &bar_text,
+            &bar_text[..],
         );
     }
     println!("Loop: {:?}", Instant::now().duration_since(t));
@@ -205,7 +208,7 @@ fn set_selection_from_screen(
 }
 
 fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
-    let candidate = pane.scroll_idx as i32 - (y * 3);
+    let candidate = pane.scroll_idx as i32 - (y);
     if candidate < 0 {
         pane.scroll_idx = 0;
     } else if candidate > buffer.len() as i32 {

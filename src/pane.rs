@@ -114,11 +114,12 @@ impl<'a> Pane<'a> {
         color: Color,
         x: i32,
         y: i32,
-        text: &str,
+        text: &[&str],
     ) -> i32 {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
-            for c in UnicodeSegmentation::graphemes(text, true) {
+            for c in text.iter().filter(|x| x.len() > 0) {
+            // for c in UnicodeSegmentation::graphemes(text, true) {
                 let key = FontCacheKey {
                     c: c.to_string(),
                     color,

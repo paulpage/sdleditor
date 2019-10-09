@@ -251,4 +251,7 @@ impl Buffer {
         }
         (x, y)
     }
+
+    // pub fn next_word(&self, x: usize, y: usize) -> (usize, usize) {
+    // }
 }
