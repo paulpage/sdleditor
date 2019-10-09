@@ -177,7 +177,9 @@ impl<'a> Pane<'a> {
     }
 
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
-        let num_lines = (f64::from(self.h) / f64::from(self.line_height)).ceil() as usize;
+        let scroll_delta = self.scroll_idx as i32 * self.line_height as i32 - self.scroll_offset;
+        let num_lines = ((f64::from(self.h) + f64::from(scroll_delta.abs()))
+            / f64::from(self.line_height)).ceil() as usize;
         let first = max(0, self.scroll_idx as i32 - num_lines as i32) as usize;
         let last = min(buffer.len(), self.scroll_idx + num_lines);
         (first, last)

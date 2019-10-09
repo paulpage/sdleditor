@@ -4,7 +4,7 @@ extern crate sdl2;
 use std::cmp::{max, min};
 use std::env;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Mod;
@@ -31,8 +31,12 @@ fn draw(
     pane_idx: usize,
     mut canvas: &mut WindowCanvas,
 ) {
+    let t = Instant::now();
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
     canvas.clear();
+
+    println!("Clear: {:?}", Instant::now().duration_since(t));
+    let t = Instant::now();
 
     let padding: i32 = 5;
     for (j, pane) in &mut panes.iter_mut().enumerate() {
@@ -50,11 +54,18 @@ fn draw(
             .enumerate()
             .map(|(i, entry)| (i + first_line, entry))
         {
+            println!("---");
+            let t = Instant::now();
+
             let uentry =
                 UnicodeSegmentation::graphemes(entry.as_str(), true).collect::<Vec<&str>>();
             let midpoint = min(pane.cursor_x, uentry.len());
             let line_y =
                 bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
+
+            println!("  Unicode: {:?}", Instant::now().duration_since(t));
+            let t = Instant::now();
+
 
             // Draw the selection
             let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = pane.get_selection();
@@ -85,6 +96,10 @@ fn draw(
                 }
             }
 
+            println!("  Selection: {:?}", Instant::now().duration_since(t));
+            let t = Instant::now();
+
+
             // Draw the text
             let midpoint_width = pane.draw_text(
                 &mut canvas,
@@ -100,6 +115,9 @@ fn draw(
                 line_y,
                 &uentry[midpoint..].concat(),
             );
+            println!("  Text: {:?}", Instant::now().duration_since(t));
+            let t = Instant::now();
+
 
             // Draw the cursor
             if j == pane_idx && i == pane.cursor_y {
@@ -111,6 +129,10 @@ fn draw(
                 );
                 pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
             }
+            println!("  Cursor: {:?}", Instant::now().duration_since(t));
+            let t = Instant::now();
+
+
         }
 
         // Draw the bar
@@ -126,6 +148,9 @@ fn draw(
             &bar_text,
         );
     }
+    println!("Loop: {:?}", Instant::now().duration_since(t));
+    let t = Instant::now();
+
 }
 
 fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> bool {
@@ -420,8 +445,12 @@ fn main() {
         }
 
         if is_dirty {
+            let mut t = Instant::now();
             draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
+            println!("Draw: {:?}", Instant::now().duration_since(t));
+            t = Instant::now();
             canvas.present();
+            println!("Present: {:?}", Instant::now().duration_since(t));
         }
 
         sleep(Duration::from_millis(5));
