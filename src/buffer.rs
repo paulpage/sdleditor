@@ -263,7 +263,7 @@ impl Buffer {
             }
         }
         if y < self.len() - 1 {
-            return (0, y + 1)
+            return (0, y + 1);
         }
         (x, y)
     }
@@ -275,7 +275,7 @@ impl Buffer {
             }
         }
         if y > 0 {
-            return (self.line_len(y - 1), y - 1)
+            return (self.line_len(y - 1), y - 1);
         }
         (x, y)
     }

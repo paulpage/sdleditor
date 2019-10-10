@@ -172,7 +172,7 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
             pane.cursor_x = x;
             pane.cursor_y = y;
         }
-,       "C-S-Z" => buffer.redo(),
+        "C-S-Z" => buffer.redo(),
         "C-S-\\" => {
             buffer.print();
             return true;

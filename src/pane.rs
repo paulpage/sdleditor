@@ -134,7 +134,11 @@ impl<'a> Pane<'a> {
                         .create_texture_from_surface(&surface)
                         .unwrap();
                     let TextureQuery { width, height, .. } = texture.query();
-                    let resource = Rc::new(FontCacheEntry {texture, w: width, h: height });
+                    let resource = Rc::new(FontCacheEntry {
+                        texture,
+                        w: width,
+                        h: height,
+                    });
                     self.font_cache.insert(key, resource.clone());
                     resource
                 });
@@ -180,7 +184,8 @@ impl<'a> Pane<'a> {
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
         let scroll_delta = self.scroll_idx as i32 * self.line_height as i32 - self.scroll_offset;
         let num_lines = ((f64::from(self.h) + f64::from(scroll_delta.abs()))
-            / f64::from(self.line_height)).ceil() as usize;
+            / f64::from(self.line_height))
+        .ceil() as usize;
         let first = max(0, self.scroll_idx as i32 - num_lines as i32) as usize;
         let last = min(buffer.len(), self.scroll_idx + num_lines);
         (first, last)
@@ -310,7 +315,7 @@ impl<'a> Pane<'a> {
     // Get the buffer indices based on a screen position. This can be used to set
     // the cursor position with the mouse.
     pub fn get_position_from_screen(&self, x: i32, y: i32, buffer: &Buffer) -> (usize, usize) {
-        let padding = 5;
+        let padding = 10;
         let bar_height: u32 = (self.line_height + padding * 2) as u32;
         let mut y_idx = max(
             ((f64::from(y) - f64::from(self.y) - f64::from(padding) - f64::from(bar_height))
@@ -323,19 +328,13 @@ impl<'a> Pane<'a> {
         let max_x_idx = buffer.line_len(y_idx);
 
         let mut length = self.x + padding;
-        let mut x_idx = 0;
+        let mut x_idx: usize = 0;
         let mut last_length = length;
-        while length < x && (x_idx as usize) < max_x_idx {
+        while length < x && x_idx < max_x_idx {
             last_length = length;
             let (char_x, _) = self
                 .font
-                .size_of(
-                    &buffer.contents[y_idx]
-                        .chars()
-                        .nth(x_idx)
-                        .unwrap()
-                        .to_string(),
-                )
+                .size_of(buffer.line_graphemes(y_idx)[x_idx])
                 .unwrap();
             length += char_x as i32;
             x_idx += 1;
