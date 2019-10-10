@@ -70,13 +70,11 @@ impl Buffer {
     }
 
     pub fn line_len(&self, y: usize) -> usize {
-        UnicodeSegmentation::graphemes(self.contents[y].as_str(), true)
-            .collect::<Vec<&str>>()
-            .len()
+        self.contents[y].graphemes(true).count()
     }
 
     pub fn line_graphemes(&self, y: usize) -> Vec<&str> {
-        UnicodeSegmentation::graphemes(self.contents[y].as_str(), true).collect::<Vec<&str>>()
+        self.contents[y].graphemes(true).collect::<Vec<&str>>()
     }
 
     pub fn clear(&mut self) {
@@ -252,6 +250,33 @@ impl Buffer {
         (x, y)
     }
 
-    // pub fn next_word(&self, x: usize, y: usize) -> (usize, usize) {
-    // }
+    pub fn next_word(&self, x: usize, y: usize) -> (usize, usize) {
+        let mut bounds = self.contents[y]
+            .split_word_bound_indices()
+            .map(|(i, _word)| i)
+            .collect::<Vec<usize>>();
+        bounds.push(self.line_len(y));
+
+        for i in bounds {
+            if i > x {
+                return (i, y);
+            }
+        }
+        if y < self.len() - 1 {
+            return (0, y + 1)
+        }
+        (x, y)
+    }
+
+    pub fn prev_word(&self, x: usize, y: usize) -> (usize, usize) {
+        for (i, _words) in self.contents[y].split_word_bound_indices().rev() {
+            if i < x {
+                return (i, y);
+            }
+        }
+        if y > 0 {
+            return (self.line_len(y - 1), y - 1)
+        }
+        (x, y)
+    }
 }

@@ -4,7 +4,7 @@ extern crate sdl2;
 use std::cmp::{max, min};
 use std::env;
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Mod;
@@ -31,12 +31,8 @@ fn draw(
     pane_idx: usize,
     mut canvas: &mut WindowCanvas,
 ) {
-    let t = Instant::now();
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
     canvas.clear();
-
-    println!("Clear: {:?}", Instant::now().duration_since(t));
-    let t = Instant::now();
 
     let padding: i32 = 5;
     for (j, pane) in &mut panes.iter_mut().enumerate() {
@@ -54,18 +50,10 @@ fn draw(
             .enumerate()
             .map(|(i, entry)| (i + first_line, entry))
         {
-            println!("---");
-            let t = Instant::now();
-
-            let uentry =
-                UnicodeSegmentation::graphemes(entry.as_str(), true).collect::<Vec<&str>>();
+            let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
             let midpoint = min(pane.cursor_x, uentry.len());
             let line_y =
                 bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
-
-            println!("  Unicode: {:?}", Instant::now().duration_since(t));
-            let t = Instant::now();
-
 
             // Draw the selection
             let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = pane.get_selection();
@@ -96,10 +84,6 @@ fn draw(
                 }
             }
 
-            println!("  Selection: {:?}", Instant::now().duration_since(t));
-            let t = Instant::now();
-
-
             // Draw the text
             let midpoint_width = pane.draw_text(
                 &mut canvas,
@@ -115,9 +99,6 @@ fn draw(
                 line_y,
                 &uentry[midpoint..],
             );
-            println!("  Text: {:?}", Instant::now().duration_since(t));
-            let t = Instant::now();
-
 
             // Draw the cursor
             if j == pane_idx && i == pane.cursor_y {
@@ -129,10 +110,6 @@ fn draw(
                 );
                 pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
             }
-            println!("  Cursor: {:?}", Instant::now().duration_since(t));
-            let t = Instant::now();
-
-
         }
 
         // Draw the bar
@@ -140,9 +117,6 @@ fn draw(
         pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
         let bar_text = vec![dirty_text, " ", &buffer.name];
-        // let bar_text: Vec<&str> = Vec::new();
-        // bar_text.push(&format!("{} {}", dirty_text, &buffer.name));
-        // let bar_text = format!("{} {}", dirty_text, &buffer.name);
         pane.draw_text(
             &mut canvas,
             Color::RGBA(251, 241, 199, 255),
@@ -151,9 +125,6 @@ fn draw(
             &bar_text[..],
         );
     }
-    println!("Loop: {:?}", Instant::now().duration_since(t));
-    let t = Instant::now();
-
 }
 
 fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> bool {
@@ -165,7 +136,10 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "PageUp" => pane.scroll_up(3),
         "PageDown" => pane.scroll_down(3, buffer),
         "Return" => pane.break_line(buffer),
+        "S-Return" => pane.break_line(buffer),
         "Backspace" => pane.remove_selection(buffer),
+        "S-Backspace" => pane.remove_selection(buffer),
+        "Tab" => insert_text(pane, buffer, "    ".to_string()),
         "S-Up" => pane.cursor_up(1, buffer, true),
         "S-Down" => pane.cursor_down(1, buffer, true),
         "S-Left" => pane.cursor_left(buffer, true),
@@ -176,7 +150,29 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "C-V" => pane.clipboard_paste(buffer),
         "C-X" => pane.clipboard_cut(buffer),
         "C-Z" => buffer.undo(),
-        "C-S-Z" => buffer.redo(),
+        "C-Right" => {
+            let (x, y) = buffer.next_word(pane.cursor_x, pane.cursor_y);
+            pane.cursor_x = x;
+            pane.cursor_y = y;
+            pane.set_selection(false);
+        }
+        "C-Left" => {
+            let (x, y) = buffer.prev_word(pane.cursor_x, pane.cursor_y);
+            pane.cursor_x = x;
+            pane.cursor_y = y;
+            pane.set_selection(false);
+        }
+        "C-S-Right" => {
+            let (x, y) = buffer.next_word(pane.cursor_x, pane.cursor_y);
+            pane.cursor_x = x;
+            pane.cursor_y = y;
+        }
+        "C-S-Left" => {
+            let (x, y) = buffer.prev_word(pane.cursor_x, pane.cursor_y);
+            pane.cursor_x = x;
+            pane.cursor_y = y;
+        }
+,       "C-S-Z" => buffer.redo(),
         "C-S-\\" => {
             buffer.print();
             return true;
@@ -237,17 +233,6 @@ fn prev<T>(list: &[T], idx: usize) -> usize {
 fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
     let (w, h) = canvas.window().size();
 
-    // let mut x = 0;
-    // let mut y = 0;
-    // for mut pane in &mut panes.iter_mut() {
-    //     pane.x = x;
-    //     pane.y = y;
-    //     pane.w = 400;
-    //     pane.h = 400;
-    //     x += 20;
-    //     y += 20;
-    // }
-
     let padding = 5;
     let pane_width = (f64::from(w) / panes.len() as f64).floor() as u32;
     let pane_height = h;
@@ -292,7 +277,7 @@ fn main() {
 
     panes.push(Pane::new(
         ttf_context
-            .load_font("data/LiberationSans-Regular.ttf", 16)
+            .load_font("data/liberation-mono.ttf", 16)
             .unwrap(),
         PaneType::Buffer,
         0,
@@ -306,7 +291,6 @@ fn main() {
     let mut is_dirty;
 
     'mainloop: loop {
-        // let t = Instant::now();
         is_dirty = false;
         for event in sdl_context.event_pump().unwrap().poll_iter() {
             is_dirty = true;
@@ -335,7 +319,7 @@ fn main() {
                     "C-'" => {
                         panes.push(Pane::new(
                             ttf_context
-                                .load_font("data/LiberationSans-Regular.ttf", 16)
+                                .load_font("data/liberation-mono.ttf", 16)
                                 .unwrap(),
                             PaneType::Buffer,
                             0,
@@ -434,7 +418,7 @@ fn main() {
                             set_selection_from_screen(pane, buffer, x, y, true);
                         }
                     }
-                    Event::MouseWheel { y, .. } => scroll(pane, buffer, y),
+                    Event::MouseWheel { y, .. } => scroll(pane, buffer, y * 5),
                     Event::KeyDown { .. } => {}
                     _ => {}
                 }
@@ -448,12 +432,8 @@ fn main() {
         }
 
         if is_dirty {
-            let mut t = Instant::now();
             draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
-            println!("Draw: {:?}", Instant::now().duration_since(t));
-            t = Instant::now();
             canvas.present();
-            println!("Present: {:?}", Instant::now().duration_since(t));
         }
 
         sleep(Duration::from_millis(5));

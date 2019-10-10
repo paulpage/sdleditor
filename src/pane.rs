@@ -9,9 +9,7 @@ use std::rc::Rc;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
 extern crate unicode_segmentation;
-use unicode_segmentation::UnicodeSegmentation;
 
-// mod buffer;
 use crate::buffer::Buffer;
 
 pub enum PaneType {
@@ -23,6 +21,12 @@ pub enum PaneType {
 struct FontCacheKey {
     c: String,
     color: Color,
+}
+
+struct FontCacheEntry {
+    texture: Texture,
+    w: u32,
+    h: u32,
 }
 
 impl Eq for FontCacheKey {}
@@ -43,7 +47,7 @@ pub struct Pane<'a> {
     pub font: Font<'a, 'static>,
     pub sel_x: usize,
     pub sel_y: usize,
-    font_cache: HashMap<FontCacheKey, Rc<Texture>>,
+    font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
 }
 
 impl<'a> Pane<'a> {
@@ -118,31 +122,27 @@ impl<'a> Pane<'a> {
     ) -> i32 {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
-            for c in text.iter().filter(|x| x.len() > 0) {
-            // for c in UnicodeSegmentation::graphemes(text, true) {
+            for c in text.iter().filter(|x| !x.is_empty()) {
                 let key = FontCacheKey {
                     c: c.to_string(),
                     color,
                 };
-                let texture = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
+                let tex = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
                     let surface = self.font.render(&c.to_string()).blended(color).unwrap();
                     let texture = canvas
                         .texture_creator()
                         .create_texture_from_surface(&surface)
                         .unwrap();
-                    let resource = Rc::new(texture);
+                    let TextureQuery { width, height, .. } = texture.query();
+                    let resource = Rc::new(FontCacheEntry {texture, w: width, h: height });
                     self.font_cache.insert(key, resource.clone());
                     resource
                 });
 
-                let TextureQuery {
-                    width: mut w,
-                    height: mut h,
-                    ..
-                } = texture.query();
-                w = min(self.w as i32 - (x + length) as i32, w as i32) as u32;
-                h = min(self.h as i32 - y as i32, h as i32) as u32;
-                let source = Rect::new(0, 0, w as u32, h as u32);
+                let texture = &tex.texture;
+                let w = min(self.w as i32 - (x + length) as i32, tex.w as i32) as u32;
+                let h = min(self.h as i32 - y as i32, tex.h as i32) as u32;
+                let source = Rect::new(0, 0, w, h);
                 let target = Rect::new(self.x + x + length as i32, self.y + y, w, h);
                 canvas.copy(&texture, Some(source), Some(target)).unwrap();
 
@@ -261,7 +261,7 @@ impl<'a> Pane<'a> {
         self.set_selection(false);
     }
 
-    pub fn remove_char(&mut self, mut buffer: &mut Buffer) {
+    pub fn remove_char(&mut self, buffer: &mut Buffer) {
         let (x1, y1) = buffer.prev_char(self.cursor_x, self.cursor_y);
         buffer.delete_text(x1, y1, self.cursor_x, self.cursor_y);
         self.cursor_x = x1;
