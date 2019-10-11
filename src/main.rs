@@ -5,6 +5,7 @@ use std::cmp::{max, min};
 use std::env;
 use std::thread::sleep;
 use std::time::Duration;
+use std::path::PathBuf;
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Mod;
@@ -24,6 +25,16 @@ use buffer::Buffer;
 
 mod file_manager;
 use file_manager::FileManager;
+
+fn select_font() -> Option<PathBuf> {
+    match font_kit::source::SystemSource::new()
+        .select_best_match(
+            &[font_kit::family_name::FamilyName::Monospace],
+            &font_kit::properties::Properties::new()) {
+        Ok(font_kit::handle::Handle::Path { path, .. }) => Some(path),
+        _ => None,
+    }
+}
 
 fn draw(
     panes: &mut Vec<Pane>,
@@ -196,9 +207,11 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
 
 fn insert_text(pane: &mut Pane, buffer: &mut Buffer, text: String) {
     let (x1, y1, x2, y2) = pane.get_selection();
-    buffer.delete_text(x1, y1, x2, y2);
-    buffer.insert_text(pane.cursor_x, pane.cursor_y, text.clone());
-    pane.cursor_x += text.len();
+    let (new_x, new_y) = buffer.replace_text(x1, y1, x2, y2, text);
+    pane.cursor_x = new_x;
+    pane.cursor_y = new_y;
+    // buffer.insert_text(x1, y1, text.clone());
+    // pane.cursor_x += text.len();
     pane.set_selection(false);
 }
 
@@ -260,6 +273,20 @@ fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
 }
 
 fn main() {
+    // let font_path = if let Handle::Path { path, .. } = font {
+    //     path
+    // } else {
+
+    // };
+    // let path = match font {
+    //     Handle::Path { path, .. } => path,
+    //     Handle::Memory { .. } => PathBuf::new(),
+    // };
+    let path = match select_font() {
+        Some(p) => p,
+        None => PathBuf::new(),
+    };
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsys = sdl_context.video().unwrap();
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
@@ -289,7 +316,7 @@ fn main() {
 
     panes.push(Pane::new(
         ttf_context
-            .load_font("data/liberation-mono.ttf", 16)
+            .load_font(&path, 16)
             .unwrap(),
         PaneType::Buffer,
         0,
@@ -331,7 +358,7 @@ fn main() {
                     "C-'" => {
                         panes.push(Pane::new(
                             ttf_context
-                                .load_font("data/liberation-mono.ttf", 16)
+                                .load_font(&path, 16)
                                 .unwrap(),
                             PaneType::Buffer,
                             0,
@@ -350,7 +377,7 @@ fn main() {
                         let mut buffer = Buffer::new();
                         let mut pane = Pane::new(
                             ttf_context
-                                .load_font("data/liberation-mono.ttf", 16)
+                                .load_font(&path, 16)
                                 .unwrap(),
                             PaneType::FileManager,
                             0,

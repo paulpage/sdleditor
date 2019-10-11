@@ -13,15 +13,9 @@ pub struct Buffer {
 }
 
 #[derive(Clone)]
-pub enum ActionType {
-    Insert,
-    Delete,
-}
-
-#[derive(Clone)]
 pub struct Action {
-    action_type: ActionType,
-    text: String,
+    deleted_text: Option<String>,
+    inserted_text: Option<String>,
     x1: usize,
     y1: usize,
     x2: usize,
@@ -122,8 +116,8 @@ impl Buffer {
         let text = self.do_delete(x1, y1, x2, y2);
         self.is_dirty = true;
         self.undo_stack.push(Action {
-            action_type: ActionType::Delete,
-            text,
+            deleted_text: Some(text),
+            inserted_text: None,
             x1,
             y1,
             x2,
@@ -131,17 +125,33 @@ impl Buffer {
         });
     }
 
-    pub fn insert_text(&mut self, x: usize, y: usize, text: String) {
+    pub fn insert_text(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
         let (x2, y2) = self.do_insert(x, y, text.clone());
         self.is_dirty = true;
         self.undo_stack.push(Action {
-            action_type: ActionType::Insert,
-            text,
+            deleted_text: None,
+            inserted_text: Some(text),
             x1: x,
             y1: y,
             x2,
             y2,
         });
+        (x2, y2)
+    }
+
+    pub fn replace_text(&mut self, x1: usize, y1: usize, x2: usize, y2: usize, text: String) -> (usize, usize) {
+        let deleted_text = self.do_delete(x1, y1, x2, y2);
+        let (x2, y2) = self.do_insert(x1, y1, text.clone());
+        self.is_dirty = true;
+        self.undo_stack.push(Action {
+            deleted_text: Some(deleted_text),
+            inserted_text: Some(text),
+            x1,
+            y1,
+            x2,
+            y2,
+        });
+        (x2, y2)
     }
 
     pub fn do_delete(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) -> String {
@@ -190,45 +200,88 @@ impl Buffer {
         (x, y)
     }
 
+    fn undo_action(&mut self, a: Action) -> Action {
+        Action {
+            inserted_text: match a.deleted_text {
+                Some(text) => {
+                    self.do_insert(a.x1, a.y1, text.clone());
+                    Some(text)
+                },
+                None => None,
+            },
+            deleted_text: match a.inserted_text {
+                Some(_text) => Some(self.do_delete(a.x1, a.y1, a.x2, a.y2)),
+                None => None,
+            },
+            x1: a.x1,
+            y1: a.y1,
+            x2: a.x2,
+            y2: a.y2,
+        }
+    }
+
     pub fn undo(&mut self) {
         if let Some(a) = self.undo_stack.pop() {
-            match a.action_type {
-                ActionType::Delete => {
-                    let (x2, y2) = self.do_insert(a.x1, a.y1, a.text.clone());
-                    self.redo_stack.push(Action {
-                        action_type: ActionType::Delete,
-                        text: a.text,
-                        x1: a.x1,
-                        y1: a.y1,
-                        x2,
-                        y2,
-                    });
-                }
-                ActionType::Insert => {
-                    self.do_delete(a.x1, a.y1, a.x2, a.y2);
-                    self.redo_stack.push(Action {
-                        action_type: ActionType::Insert,
-                        text: a.text,
-                        x1: a.x1,
-                        y1: a.y2,
-                        x2: a.x2,
-                        y2: a.y2,
-                    });
-                }
-            }
+            let a = self.undo_action(a);
+            self.redo_stack.push(a);
         }
+        // if let Some(a) = self.undo_stack.pop() {
+        //     match a.action_type {
+        //         ActionType::Delete => {
+        //             let (x2, y2) = self.do_insert(a.x1, a.y1, a.text.clone());
+        //             self.redo_stack.push(Action {
+        //                 action_type: ActionType::Delete,
+        //                 text: a.text,
+        //                 x1: a.x1,
+        //                 y1: a.y1,
+        //                 x2,
+        //                 y2,
+        //             });
+        //         }
+        //         ActionType::Insert => {
+        //             self.do_delete(a.x1, a.y1, a.x2, a.y2);
+        //             self.redo_stack.push(Action {
+        //                 action_type: ActionType::Insert,
+        //                 text: a.text,
+        //                 x1: a.x1,
+        //                 y1: a.y2,
+        //                 x2: a.x2,
+        //                 y2: a.y2,
+        //             });
+        //         }
+        //     }
+        // }
     }
 
     pub fn redo(&mut self) {
         if let Some(a) = self.redo_stack.pop() {
-            match a.action_type {
-                ActionType::Delete => {
-                    self.delete_text(a.x1, a.y1, a.x2, a.y2);
-                }
-                ActionType::Insert => {
-                    self.insert_text(a.x1, a.y1, a.text);
-                }
-            }
+            let a = self.undo_action(a);
+            self.undo_stack.push(a);
+            // self.undo_stack.push(Action {
+            //     inserted_text: match a.deleted_text {
+            //             self.do_insert(x1, y1, x2, y2, text.clone());
+            //             text
+            //         },
+            //         None => None,
+            //     },
+            //     deleted_text: match a.inserted_text {
+            //         Some(text) => self.do_delete(x1, y1, x2, y2),
+            //         None => None,
+            //     },
+            //     a.x1,
+            //     a.y1,
+            //     a.x2,
+            //     a.y2,
+            // });
+
+//             match a.action_type {
+//                 ActionType::Delete => {
+//                     self.delete_text(a.x1, a.y1, a.x2, a.y2);
+//                 }
+//                 ActionType::Insert => {
+//                     self.insert_text(a.x1, a.y1, a.text);
+//                 }
+            // }
         }
     }
 
