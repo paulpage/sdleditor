@@ -31,11 +31,20 @@ fn draw(
     pane_idx: usize,
     mut canvas: &mut WindowCanvas,
 ) {
-    canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
+    let color_bg = Color::RGB(40, 40, 40);
+    let color_fg = Color::RGB(253, 244, 193);
+    let color_selection1 = Color::RGB(168, 153, 132);
+    let color_bar_bg_active = Color::RGB(80, 73, 69);
+    let color_bar_bg_inactive = Color::RGB(60, 56, 54);
+    let color_bar_fg_active = Color::RGB(253, 244, 193);
+    let color_bar_fg_inactive = Color::RGB(189, 174, 147);
+
+    canvas.set_draw_color(color_bg);
     canvas.clear();
 
     let padding: i32 = 5;
     for (j, pane) in &mut panes.iter_mut().enumerate() {
+        canvas.set_draw_color(color_bg);
         pane.draw(&mut canvas, padding, j == pane_idx);
         let bar_height: i32 = pane.line_height as i32 + padding * 2;
 
@@ -72,7 +81,6 @@ fn draw(
                         );
                     }
                 }
-                let color = Color::RGBA(146, 131, 116, 0);
                 if x2 > x1 {
                     let rect = Rect::new(
                         padding * 2 + x1 as i32,
@@ -80,21 +88,21 @@ fn draw(
                         (x2 - x1) as u32,
                         pane.line_height as u32,
                     );
-                    pane.fill_rect(&mut canvas, color, rect);
+                    pane.fill_rect(&mut canvas, color_selection1, rect);
                 }
             }
 
             // Draw the text
             let midpoint_width = pane.draw_text(
                 &mut canvas,
-                Color::RGBA(251, 241, 199, 255),
+                color_fg,
                 padding * 2,
                 line_y,
                 &uentry[0..midpoint],
             );
             pane.draw_text(
                 &mut canvas,
-                Color::RGBA(251, 241, 199, 255),
+                color_fg,
                 padding * 2 + midpoint_width,
                 line_y,
                 &uentry[midpoint..],
@@ -108,22 +116,26 @@ fn draw(
                     2,
                     pane.line_height as u32,
                 );
-                pane.fill_rect(&mut canvas, Color::RGBA(235, 219, 178, 255), rect);
+                pane.fill_rect(&mut canvas, color_fg, rect);
             }
         }
 
         // Draw the bar
+        let bg = if j == pane_idx {
+            color_bar_bg_active
+        } else {
+            color_bar_bg_inactive
+        };
+        let fg = if j == pane_idx {
+            color_bar_fg_active
+        } else {
+            color_bar_fg_inactive
+        };
         let rect = Rect::new(0, 0, pane.w, bar_height as u32);
-        pane.fill_rect(&mut canvas, Color::RGBA(80, 73, 69, 255), rect);
+        pane.fill_rect(&mut canvas, bg, rect);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
         let bar_text = vec![dirty_text, " ", &buffer.name];
-        pane.draw_text(
-            &mut canvas,
-            Color::RGBA(251, 241, 199, 255),
-            padding,
-            padding,
-            &bar_text[..],
-        );
+        pane.draw_text(&mut canvas, fg, padding, padding, &bar_text[..]);
     }
 }
 
@@ -338,13 +350,13 @@ fn main() {
                         let mut buffer = Buffer::new();
                         let mut pane = Pane::new(
                             ttf_context
-                                .load_font("data/LiberationSans-Regular.ttf", 16)
+                                .load_font("data/liberation-mono.ttf", 16)
                                 .unwrap(),
                             PaneType::FileManager,
                             0,
                         );
-                        let current_dir = env::current_dir().unwrap();
-                        fm.update(&mut pane, &mut buffer, current_dir.to_str().unwrap());
+                        fm.current_dir = env::current_dir().unwrap();
+                        fm.update(&mut pane, &mut buffer);
                         pane.buffer_id = buffers.len();
                         pane_idx = panes.len();
                         buffers.push(buffer);
@@ -390,6 +402,7 @@ fn main() {
                         if let WindowEvent::Resized(w, h) = win_event {
                             pane.w = max(0, w - 40) as u32;
                             pane.h = max(0, h - 40) as u32;
+                            arrange(&canvas, &mut panes);
                         }
                     }
                     Event::TextInput { text, .. } => match pane.pane_type {

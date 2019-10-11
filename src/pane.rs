@@ -75,9 +75,9 @@ impl<'a> Pane<'a> {
     pub fn draw(&mut self, canvas: &mut WindowCanvas, padding: i32, is_active: bool) {
         // Background
         let border_color = if is_active {
-            Color::RGBA(152, 151, 26, 255)
+            Color::RGB(80, 73, 69)
         } else {
-            Color::RGBA(0, 0, 0, 255)
+            Color::RGB(60, 56, 54)
         };
         canvas.set_draw_color(border_color);
         let rect = Rect::new(
