@@ -45,75 +45,12 @@ fn draw(
     }
 }
 
-fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> bool {
-    match kstr {
-        "Up" => pane.cursor_up(1, buffer, false),
-        "Down" => pane.cursor_down(1, buffer, false),
-        "Left" => pane.cursor_left(buffer, false),
-        "Right" => pane.cursor_right(buffer, false),
-        "PageUp" => pane.scroll(buffer, 20),
-        "PageDown" => pane.scroll(buffer, -20),
-        "Return" => pane.break_line(buffer),
-        "S-Return" => pane.break_line(buffer),
-        "Backspace" => pane.remove_selection(buffer),
-        "S-Backspace" => pane.remove_selection(buffer),
-        "Tab" => pane.insert_text(buffer, "    ".to_string()),
-        "S-Up" => pane.cursor_up(1, buffer, true),
-        "S-Down" => pane.cursor_down(1, buffer, true),
-        "S-Left" => pane.cursor_left(buffer, true),
-        "S-Right" => pane.cursor_right(buffer, true),
-        "C-A" => pane.select_all(buffer),
-        "C-C" => pane.clipboard_copy(buffer),
-        "C-S" => buffer.save(),
-        "C-V" => pane.clipboard_paste(buffer),
-        "C-X" => pane.clipboard_cut(buffer),
-        "C-Z" => buffer.undo(),
-        "C-Right" => {
-            let (x, y) = buffer.next_word(pane.cursor_x, pane.cursor_y);
-            pane.cursor_x = x;
-            pane.cursor_y = y;
-            pane.set_selection(false);
-        }
-        "C-Left" => {
-            let (x, y) = buffer.prev_word(pane.cursor_x, pane.cursor_y);
-            pane.cursor_x = x;
-            pane.cursor_y = y;
-            pane.set_selection(false);
-        }
-        "C-S-Right" => {
-            let (x, y) = buffer.next_word(pane.cursor_x, pane.cursor_y);
-            pane.cursor_x = x;
-            pane.cursor_y = y;
-        }
-        "C-S-Left" => {
-            let (x, y) = buffer.prev_word(pane.cursor_x, pane.cursor_y);
-            pane.cursor_x = x;
-            pane.cursor_y = y;
-        }
-        "C-S-Z" => buffer.redo(),
-        "C-S-\\" => {
-            buffer.print();
-            return true;
-        }
-        _ => {}
-    }
-    false
-}
-
 fn next<T>(list: &[T], idx: usize) -> usize {
-    if idx < list.len() - 1 {
-        idx + 1
-    } else {
-        0
-    }
+    (idx + 1) % list.len()
 }
 
 fn prev<T>(list: &[T], idx: usize) -> usize {
-    if idx > 0 {
-        idx - 1
-    } else {
-        list.len() - 1
-    }
+    (idx + list.len() - 1) % list.len()
 }
 
 fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
@@ -141,7 +78,7 @@ fn main() {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsys = sdl_context.video().unwrap();
-    let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string()).unwrap();
+    let ttf_context = sdl2::ttf::init().unwrap();
     let window = video_subsys
         .window("SDL2_TTF Example", 800, 600)
         .position_centered()
@@ -149,7 +86,6 @@ fn main() {
         .maximized()
         .opengl()
         .build()
-        .map_err(|e| e.to_string())
         .unwrap();
     let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
 
@@ -176,13 +112,12 @@ fn main() {
     let mut ctrl_pressed = false;
     let mut alt_pressed = false;
     let mut fm = FileManager::new();
-    // Don't redraw unless we have to
-    let mut is_dirty;
+    let mut needs_redraw;
 
     'mainloop: loop {
-        is_dirty = false;
+        needs_redraw = false;
         for event in sdl_context.event_pump().unwrap().poll_iter() {
-            is_dirty = true;
+            needs_redraw = true;
             if let Event::KeyDown {
                 keycode: Some(kc),
                 keymod,
@@ -248,7 +183,7 @@ fn main() {
                         let buffer = &mut buffers[pane.buffer_id];
                         match pane.pane_type {
                             PaneType::Buffer => {
-                                if handle_local_keystroke(pane, buffer, kstr) {
+                                if pane.handle_keystroke(buffer, kstr) {
                                     break 'mainloop;
                                 }
                             }
@@ -313,11 +248,11 @@ fn main() {
 
         for pane in &panes {
             if pane.scroll_offset != pane.scroll_idx as i32 * pane.line_height as i32 {
-                is_dirty = true;
+                needs_redraw = true;
             }
         }
 
-        if is_dirty {
+        if needs_redraw {
             draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
             canvas.present();
         }

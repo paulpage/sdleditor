@@ -190,6 +190,61 @@ impl<'a> Pane<'a> {
         self.draw_text(&mut canvas, color_bar_fg, padding, padding, &bar_text[..]);
     }
 
+    pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {
+        match kstr {
+            "Up" => self.cursor_up(1, buffer, false),
+            "Down" => self.cursor_down(1, buffer, false),
+            "Left" => self.cursor_left(buffer, false),
+            "Right" => self.cursor_right(buffer, false),
+            "PageUp" => self.scroll(buffer, 20),
+            "PageDown" => self.scroll(buffer, -20),
+            "Return" => self.break_line(buffer),
+            "S-Return" => self.break_line(buffer),
+            "Backspace" => self.remove_selection(buffer),
+            "S-Backspace" => self.remove_selection(buffer),
+            "Tab" => self.insert_text(buffer, "    ".to_string()),
+            "S-Up" => self.cursor_up(1, buffer, true),
+            "S-Down" => self.cursor_down(1, buffer, true),
+            "S-Left" => self.cursor_left(buffer, true),
+            "S-Right" => self.cursor_right(buffer, true),
+            "C-A" => self.select_all(buffer),
+            "C-C" => self.clipboard_copy(buffer),
+            "C-S" => buffer.save(),
+            "C-V" => self.clipboard_paste(buffer),
+            "C-X" => self.clipboard_cut(buffer),
+            "C-Z" => buffer.undo(),
+            "C-Right" => {
+                let (x, y) = buffer.next_word(self.cursor_x, self.cursor_y);
+                self.cursor_x = x;
+                self.cursor_y = y;
+                self.set_selection(false);
+            }
+            "C-Left" => {
+                let (x, y) = buffer.prev_word(self.cursor_x, self.cursor_y);
+                self.cursor_x = x;
+                self.cursor_y = y;
+                self.set_selection(false);
+            }
+            "C-S-Right" => {
+                let (x, y) = buffer.next_word(self.cursor_x, self.cursor_y);
+                self.cursor_x = x;
+                self.cursor_y = y;
+            }
+            "C-S-Left" => {
+                let (x, y) = buffer.prev_word(self.cursor_x, self.cursor_y);
+                self.cursor_x = x;
+                self.cursor_y = y;
+            }
+            "C-S-Z" => buffer.redo(),
+            "C-S-\\" => {
+                buffer.print();
+                return true;
+            }
+            _ => {}
+        }
+        false
+    }
+
     pub fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
         canvas.set_draw_color(color);
         let x = min(self.x + self.w as i32, max(self.x, self.x + rect.x));
