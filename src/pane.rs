@@ -9,6 +9,7 @@ use std::rc::Rc;
 use clipboard::{ClipboardContext, ClipboardProvider};
 
 extern crate unicode_segmentation;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::buffer::Buffer;
 
@@ -72,14 +73,23 @@ impl<'a> Pane<'a> {
         }
     }
 
-    pub fn draw(&mut self, canvas: &mut WindowCanvas, padding: i32, is_active: bool) {
+    pub fn draw(
+        &mut self,
+        mut canvas: &mut WindowCanvas,
+        buffer: &Buffer,
+        padding: i32,
+        is_active: bool,
+    ) {
         // Background
-        let border_color = if is_active {
-            Color::RGB(80, 73, 69)
+        let color_bg = Color::RGB(40, 40, 40);
+        let color_fg = Color::RGB(253, 244, 193);
+        let color_selection1 = Color::RGB(168, 153, 132);
+        let (color_bar_bg, color_bar_fg) = if is_active {
+            (Color::RGB(80, 73, 69), Color::RGB(253, 244, 193))
         } else {
-            Color::RGB(60, 56, 54)
+            (Color::RGB(60, 56, 54), Color::RGB(189, 174, 147))
         };
-        canvas.set_draw_color(border_color);
+        canvas.set_draw_color(color_bar_bg);
         let rect = Rect::new(
             self.x - padding,
             self.y - padding,
@@ -87,7 +97,7 @@ impl<'a> Pane<'a> {
             self.h + padding as u32 * 2,
         );
         canvas.fill_rect(rect).unwrap();
-        canvas.set_draw_color(Color::RGBA(20, 20, 20, 255));
+        canvas.set_draw_color(color_bg);
         let rect = Rect::new(self.x, self.y, self.w, self.h);
         canvas.fill_rect(rect).unwrap();
 
@@ -99,6 +109,85 @@ impl<'a> Pane<'a> {
         } else if self.scroll_offset > target_scroll_offset {
             self.scroll_offset += (f64::from(scroll_delta) / 3.0).floor() as i32;
         }
+
+        // We only want to render the lines that are actually on the screen.
+        let (first_line, last_line) = self.get_lines_on_screen(&buffer);
+
+        let bar_height: i32 = self.line_height as i32 + padding * 2;
+
+        // Draw the contents of the file and the cursor.
+        for (i, entry) in buffer.contents[first_line..last_line]
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| (i + first_line, entry))
+        {
+            let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
+            let midpoint = min(self.cursor_x, uentry.len());
+            let line_y =
+                bar_height + padding * 2 + i as i32 * self.line_height as i32 - self.scroll_offset;
+
+            // Draw the selection
+            let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = self.get_selection();
+            if i >= sel_start_y && i <= sel_end_y {
+                let mut x1: u32 = 0;
+                let mut x2: u32 = self.text_length(&buffer.contents[i]);
+                if !buffer.contents[i].is_empty() {
+                    if i == sel_start_y {
+                        x1 = self.text_length(
+                            &buffer.line_graphemes(i)[..sel_start_x].concat().to_string(),
+                        );
+                    }
+                    if i == sel_end_y {
+                        x2 = self.text_length(
+                            &buffer.line_graphemes(i)[..sel_end_x].concat().to_string(),
+                        );
+                    }
+                }
+                if x2 > x1 {
+                    let rect = Rect::new(
+                        padding * 2 + x1 as i32,
+                        line_y,
+                        (x2 - x1) as u32,
+                        self.line_height as u32,
+                    );
+                    self.fill_rect(&mut canvas, color_selection1, rect);
+                }
+            }
+
+            // Draw the text
+            let midpoint_width = self.draw_text(
+                &mut canvas,
+                color_fg,
+                padding * 2,
+                line_y,
+                &uentry[..midpoint],
+            );
+            self.draw_text(
+                &mut canvas,
+                color_fg,
+                padding * 2 + midpoint_width,
+                line_y,
+                &uentry[midpoint..],
+            );
+
+            // Draw the cursor
+            if is_active && i == self.cursor_y {
+                let rect = Rect::new(
+                    padding * 2 + midpoint_width as i32,
+                    line_y,
+                    2,
+                    self.line_height as u32,
+                );
+                self.fill_rect(&mut canvas, color_fg, rect);
+            }
+        }
+
+        // Draw the bar
+        let rect = Rect::new(0, 0, self.w, bar_height as u32);
+        self.fill_rect(&mut canvas, color_bar_bg, rect);
+        let dirty_text = if buffer.is_dirty { "*" } else { "" };
+        let bar_text = vec![dirty_text, " ", &buffer.name];
+        self.draw_text(&mut canvas, color_bar_fg, padding, padding, &bar_text[..]);
     }
 
     pub fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
@@ -110,6 +199,13 @@ impl<'a> Pane<'a> {
         if w > 0 && h > 0 {
             canvas.fill_rect(Rect::new(x, y, w, h)).unwrap();
         }
+    }
+
+    pub fn scroll(&mut self, buffer: &Buffer, lines: i32) {
+        self.scroll_idx = min(
+            buffer.len(),
+            max(0, self.scroll_idx as i32 - lines) as usize,
+        );
     }
 
     pub fn draw_text(
@@ -157,6 +253,14 @@ impl<'a> Pane<'a> {
             }
         }
         length
+    }
+
+    pub fn insert_text(&mut self, buffer: &mut Buffer, text: String) {
+        let (x1, y1, x2, y2) = self.get_selection();
+        let (new_x, new_y) = buffer.replace_text(x1, y1, x2, y2, text);
+        self.cursor_x = new_x;
+        self.cursor_y = new_y;
+        self.set_selection(false);
     }
 
     pub fn clipboard_paste(&mut self, buffer: &mut Buffer) {
@@ -242,14 +346,6 @@ impl<'a> Pane<'a> {
         self.set_selection(extend_selection);
     }
 
-    pub fn scroll_up(&mut self, num: usize) {
-        self.scroll_idx = max(0, self.scroll_idx as i32 - num as i32) as usize;
-    }
-
-    pub fn scroll_down(&mut self, num: usize, buffer: &Buffer) {
-        self.scroll_idx = min(buffer.len(), self.scroll_idx + num);
-    }
-
     pub fn break_line(&mut self, buffer: &mut Buffer) {
         let mut g = buffer.line_graphemes(self.cursor_y);
         let first_half = g
@@ -312,9 +408,8 @@ impl<'a> Pane<'a> {
         self.set_selection(false);
     }
 
-    // Get the buffer indices based on a screen position. This can be used to set
-    // the cursor position with the mouse.
-    pub fn get_position_from_screen(&self, x: i32, y: i32, buffer: &Buffer) -> (usize, usize) {
+    // Set the selection/cursor positions based on screen coordinates.
+    pub fn set_selection_from_screen(&mut self, buffer: &Buffer, x: i32, y: i32, extend: bool) {
         let padding = 10;
         let bar_height: u32 = (self.line_height + padding * 2) as u32;
         let mut y_idx = max(
@@ -343,6 +438,9 @@ impl<'a> Pane<'a> {
             x_idx += 1;
         }
         x_idx = max(x_idx as i32 - 1, 0) as usize;
-        (x_idx, y_idx)
+
+        self.cursor_x = x_idx;
+        self.cursor_y = y_idx;
+        self.set_selection(extend);
     }
 }

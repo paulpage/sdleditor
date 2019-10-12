@@ -1,21 +1,17 @@
 extern crate clipboard;
 extern crate sdl2;
 
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::env;
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
-use std::path::PathBuf;
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Mod;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
-
-extern crate unicode_segmentation;
-use unicode_segmentation::UnicodeSegmentation;
 
 mod pane;
 use pane::{Pane, PaneType};
@@ -27,10 +23,10 @@ mod file_manager;
 use file_manager::FileManager;
 
 fn select_font() -> Option<PathBuf> {
-    match font_kit::source::SystemSource::new()
-        .select_best_match(
-            &[font_kit::family_name::FamilyName::Monospace],
-            &font_kit::properties::Properties::new()) {
+    match font_kit::source::SystemSource::new().select_best_match(
+        &[font_kit::family_name::FamilyName::Monospace],
+        &font_kit::properties::Properties::new(),
+    ) {
         Ok(font_kit::handle::Handle::Path { path, .. }) => Some(path),
         _ => None,
     }
@@ -42,111 +38,10 @@ fn draw(
     pane_idx: usize,
     mut canvas: &mut WindowCanvas,
 ) {
-    let color_bg = Color::RGB(40, 40, 40);
-    let color_fg = Color::RGB(253, 244, 193);
-    let color_selection1 = Color::RGB(168, 153, 132);
-    let color_bar_bg_active = Color::RGB(80, 73, 69);
-    let color_bar_bg_inactive = Color::RGB(60, 56, 54);
-    let color_bar_fg_active = Color::RGB(253, 244, 193);
-    let color_bar_fg_inactive = Color::RGB(189, 174, 147);
-
-    canvas.set_draw_color(color_bg);
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
-
-    let padding: i32 = 5;
     for (j, pane) in &mut panes.iter_mut().enumerate() {
-        canvas.set_draw_color(color_bg);
-        pane.draw(&mut canvas, padding, j == pane_idx);
-        let bar_height: i32 = pane.line_height as i32 + padding * 2;
-
-        let buffer = &buffers[pane.buffer_id];
-
-        // We only want to render the lines that are actually on the screen.
-        let (first_line, last_line) = pane.get_lines_on_screen(&buffer);
-
-        // Draw the contents of the file and the cursor.
-        for (i, entry) in buffer.contents[first_line..last_line]
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| (i + first_line, entry))
-        {
-            let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
-            let midpoint = min(pane.cursor_x, uentry.len());
-            let line_y =
-                bar_height + padding * 2 + i as i32 * pane.line_height as i32 - pane.scroll_offset;
-
-            // Draw the selection
-            let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = pane.get_selection();
-            if i >= sel_start_y && i <= sel_end_y {
-                let mut x1: u32 = 0;
-                let mut x2: u32 = pane.text_length(&buffer.contents[i]);
-                if !buffer.contents[i].is_empty() {
-                    if i == sel_start_y {
-                        x1 = pane.text_length(
-                            &buffer.line_graphemes(i)[..sel_start_x].concat().to_string(),
-                        );
-                    }
-                    if i == sel_end_y {
-                        x2 = pane.text_length(
-                            &buffer.line_graphemes(i)[..sel_end_x].concat().to_string(),
-                        );
-                    }
-                }
-                if x2 > x1 {
-                    let rect = Rect::new(
-                        padding * 2 + x1 as i32,
-                        line_y,
-                        (x2 - x1) as u32,
-                        pane.line_height as u32,
-                    );
-                    pane.fill_rect(&mut canvas, color_selection1, rect);
-                }
-            }
-
-            // Draw the text
-            let midpoint_width = pane.draw_text(
-                &mut canvas,
-                color_fg,
-                padding * 2,
-                line_y,
-                &uentry[0..midpoint],
-            );
-            pane.draw_text(
-                &mut canvas,
-                color_fg,
-                padding * 2 + midpoint_width,
-                line_y,
-                &uentry[midpoint..],
-            );
-
-            // Draw the cursor
-            if j == pane_idx && i == pane.cursor_y {
-                let rect = Rect::new(
-                    padding * 2 + midpoint_width as i32,
-                    line_y,
-                    2,
-                    pane.line_height as u32,
-                );
-                pane.fill_rect(&mut canvas, color_fg, rect);
-            }
-        }
-
-        // Draw the bar
-        let bg = if j == pane_idx {
-            color_bar_bg_active
-        } else {
-            color_bar_bg_inactive
-        };
-        let fg = if j == pane_idx {
-            color_bar_fg_active
-        } else {
-            color_bar_fg_inactive
-        };
-        let rect = Rect::new(0, 0, pane.w, bar_height as u32);
-        pane.fill_rect(&mut canvas, bg, rect);
-        let dirty_text = if buffer.is_dirty { "*" } else { "" };
-        let bar_text = vec![dirty_text, " ", &buffer.name];
-        pane.draw_text(&mut canvas, fg, padding, padding, &bar_text[..]);
+        pane.draw(&mut canvas, &buffers[pane.buffer_id], 5, j == pane_idx);
     }
 }
 
@@ -156,13 +51,13 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
         "Down" => pane.cursor_down(1, buffer, false),
         "Left" => pane.cursor_left(buffer, false),
         "Right" => pane.cursor_right(buffer, false),
-        "PageUp" => pane.scroll_up(3),
-        "PageDown" => pane.scroll_down(3, buffer),
+        "PageUp" => pane.scroll(buffer, 20),
+        "PageDown" => pane.scroll(buffer, -20),
         "Return" => pane.break_line(buffer),
         "S-Return" => pane.break_line(buffer),
         "Backspace" => pane.remove_selection(buffer),
         "S-Backspace" => pane.remove_selection(buffer),
-        "Tab" => insert_text(pane, buffer, "    ".to_string()),
+        "Tab" => pane.insert_text(buffer, "    ".to_string()),
         "S-Up" => pane.cursor_up(1, buffer, true),
         "S-Down" => pane.cursor_down(1, buffer, true),
         "S-Left" => pane.cursor_left(buffer, true),
@@ -205,40 +100,6 @@ fn handle_local_keystroke(pane: &mut Pane, buffer: &mut Buffer, kstr: &str) -> b
     false
 }
 
-fn insert_text(pane: &mut Pane, buffer: &mut Buffer, text: String) {
-    let (x1, y1, x2, y2) = pane.get_selection();
-    let (new_x, new_y) = buffer.replace_text(x1, y1, x2, y2, text);
-    pane.cursor_x = new_x;
-    pane.cursor_y = new_y;
-    // buffer.insert_text(x1, y1, text.clone());
-    // pane.cursor_x += text.len();
-    pane.set_selection(false);
-}
-
-fn set_selection_from_screen(
-    pane: &mut Pane,
-    buffer: &mut Buffer,
-    x: i32,
-    y: i32,
-    extend_selection: bool,
-) {
-    let (x_idx, y_idx) = pane.get_position_from_screen(x, y, buffer);
-    pane.cursor_x = x_idx;
-    pane.cursor_y = y_idx;
-    pane.set_selection(extend_selection);
-}
-
-fn scroll(pane: &mut Pane, buffer: &Buffer, y: i32) {
-    let candidate = pane.scroll_idx as i32 - (y);
-    if candidate < 0 {
-        pane.scroll_idx = 0;
-    } else if candidate > buffer.len() as i32 {
-        pane.scroll_idx = buffer.len();
-    } else {
-        pane.scroll_idx = candidate as usize;
-    }
-}
-
 fn next<T>(list: &[T], idx: usize) -> usize {
     if idx < list.len() - 1 {
         idx + 1
@@ -273,15 +134,6 @@ fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
 }
 
 fn main() {
-    // let font_path = if let Handle::Path { path, .. } = font {
-    //     path
-    // } else {
-
-    // };
-    // let path = match font {
-    //     Handle::Path { path, .. } => path,
-    //     Handle::Memory { .. } => PathBuf::new(),
-    // };
     let path = match select_font() {
         Some(p) => p,
         None => PathBuf::new(),
@@ -315,9 +167,7 @@ fn main() {
     }
 
     panes.push(Pane::new(
-        ttf_context
-            .load_font(&path, 16)
-            .unwrap(),
+        ttf_context.load_font(&path, 16).unwrap(),
         PaneType::Buffer,
         0,
     ));
@@ -357,9 +207,7 @@ fn main() {
                 match kstr {
                     "C-'" => {
                         panes.push(Pane::new(
-                            ttf_context
-                                .load_font(&path, 16)
-                                .unwrap(),
+                            ttf_context.load_font(&path, 16).unwrap(),
                             PaneType::Buffer,
                             0,
                         ));
@@ -376,9 +224,7 @@ fn main() {
                     "C-O" => {
                         let mut buffer = Buffer::new();
                         let mut pane = Pane::new(
-                            ttf_context
-                                .load_font(&path, 16)
-                                .unwrap(),
+                            ttf_context.load_font(&path, 16).unwrap(),
                             PaneType::FileManager,
                             0,
                         );
@@ -435,7 +281,7 @@ fn main() {
                     Event::TextInput { text, .. } => match pane.pane_type {
                         PaneType::Buffer => {
                             if !ctrl_pressed && !alt_pressed {
-                                insert_text(pane, buffer, text);
+                                pane.insert_text(buffer, text);
                             }
                         }
                         PaneType::FileManager => {
@@ -449,16 +295,16 @@ fn main() {
                         }
                     },
                     Event::MouseButtonDown { x, y, .. } => {
-                        set_selection_from_screen(pane, buffer, x, y, false)
+                        pane.set_selection_from_screen(&buffer, x, y, false)
                     }
                     Event::MouseMotion {
                         mousestate, x, y, ..
                     } => {
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
-                            set_selection_from_screen(pane, buffer, x, y, true);
+                            pane.set_selection_from_screen(&buffer, x, y, true);
                         }
                     }
-                    Event::MouseWheel { y, .. } => scroll(pane, buffer, y * 5),
+                    Event::MouseWheel { y, .. } => pane.scroll(buffer, y * 5),
                     Event::KeyDown { .. } => {}
                     _ => {}
                 }

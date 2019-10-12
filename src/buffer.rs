@@ -139,7 +139,14 @@ impl Buffer {
         (x2, y2)
     }
 
-    pub fn replace_text(&mut self, x1: usize, y1: usize, x2: usize, y2: usize, text: String) -> (usize, usize) {
+    pub fn replace_text(
+        &mut self,
+        x1: usize,
+        y1: usize,
+        x2: usize,
+        y2: usize,
+        text: String,
+    ) -> (usize, usize) {
         let deleted_text = self.do_delete(x1, y1, x2, y2);
         let (x2, y2) = self.do_insert(x1, y1, text.clone());
         self.is_dirty = true;
@@ -206,7 +213,7 @@ impl Buffer {
                 Some(text) => {
                     self.do_insert(a.x1, a.y1, text.clone());
                     Some(text)
-                },
+                }
                 None => None,
             },
             deleted_text: match a.inserted_text {
@@ -274,13 +281,13 @@ impl Buffer {
             //     a.y2,
             // });
 
-//             match a.action_type {
-//                 ActionType::Delete => {
-//                     self.delete_text(a.x1, a.y1, a.x2, a.y2);
-//                 }
-//                 ActionType::Insert => {
-//                     self.insert_text(a.x1, a.y1, a.text);
-//                 }
+            //             match a.action_type {
+            //                 ActionType::Delete => {
+            //                     self.delete_text(a.x1, a.y1, a.x2, a.y2);
+            //                 }
+            //                 ActionType::Insert => {
+            //                     self.insert_text(a.x1, a.y1, a.text);
+            //                 }
             // }
         }
     }
