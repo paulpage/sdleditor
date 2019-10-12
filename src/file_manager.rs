@@ -61,8 +61,15 @@ impl FileManager {
             }
             "Return" => {
                 if self.entries[pane.sel_y].is_dir {
-                    let current_dir = env::current_dir().unwrap();
-                    self.current_dir = Path::join(&current_dir, &self.entries[pane.sel_y].name);
+                    let entry = &self.entries[pane.sel_y].name;
+                    if entry == ".." {
+                        if let Some(path) = self.current_dir.parent() {
+                            self.current_dir = path.to_path_buf();
+                        }
+                    } else {
+                        self.current_dir =
+                            Path::join(&self.current_dir, &self.entries[pane.sel_y].name);
+                    }
                     self.update(&mut pane, &mut buffer);
                 } else {
                     let path = Path::join(&env::current_dir().unwrap(), &self.current_dir);
