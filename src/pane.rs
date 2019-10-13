@@ -6,8 +6,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use clipboard::{ClipboardContext, ClipboardProvider};
-
 extern crate unicode_segmentation;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -39,15 +37,10 @@ pub struct Pane<'a> {
     pub w: u32,
     pub h: u32,
     pub buffer_id: usize,
-    pub cursor_x: usize,
-    pub max_cursor_x: usize,
-    pub cursor_y: usize,
     pub scroll_idx: usize,
     pub scroll_offset: i32,
     pub line_height: i32,
     pub font: Font<'a, 'static>,
-    pub sel_x: usize,
-    pub sel_y: usize,
     font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
 }
 
@@ -60,11 +53,6 @@ impl<'a> Pane<'a> {
             w: 0,
             h: 0,
             buffer_id,
-            cursor_x: 0,
-            cursor_y: 0,
-            max_cursor_x: 0,
-            sel_x: 0,
-            sel_y: 0,
             scroll_idx: 0,
             scroll_offset: 0,
             line_height: font.height(),
@@ -122,12 +110,12 @@ impl<'a> Pane<'a> {
             .map(|(i, entry)| (i + first_line, entry))
         {
             let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
-            let midpoint = min(self.cursor_x, uentry.len());
+            let midpoint = min(buffer.cursor_x, uentry.len());
             let line_y =
                 bar_height + padding * 2 + i as i32 * self.line_height as i32 - self.scroll_offset;
 
             // Draw the selection
-            let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = self.get_selection();
+            let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
             if i >= sel_start_y && i <= sel_end_y {
                 let mut x1: u32 = 0;
                 let mut x2: u32 = self.text_length(&buffer.contents[i]);
@@ -171,7 +159,7 @@ impl<'a> Pane<'a> {
             );
 
             // Draw the cursor
-            if is_active && i == self.cursor_y {
+            if is_active && i == buffer.cursor_y {
                 let rect = Rect::new(
                     padding * 2 + midpoint_width as i32,
                     line_y,
@@ -192,48 +180,48 @@ impl<'a> Pane<'a> {
 
     pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {
         match kstr {
-            "Up" => self.cursor_up(1, buffer, false),
-            "Down" => self.cursor_down(1, buffer, false),
-            "Left" => self.cursor_left(buffer, false),
-            "Right" => self.cursor_right(buffer, false),
+            "Up" => buffer.cursor_up(1, false),
+            "Down" => buffer.cursor_down(1, false),
+            "Left" => buffer.cursor_left(false),
+            "Right" => buffer.cursor_right(false),
             "PageUp" => self.scroll(buffer, 20),
             "PageDown" => self.scroll(buffer, -20),
-            "Return" => self.break_line(buffer),
-            "S-Return" => self.break_line(buffer),
-            "Backspace" => self.remove_selection(buffer),
-            "S-Backspace" => self.remove_selection(buffer),
-            "Tab" => self.insert_text(buffer, "    ".to_string()),
-            "S-Up" => self.cursor_up(1, buffer, true),
-            "S-Down" => self.cursor_down(1, buffer, true),
-            "S-Left" => self.cursor_left(buffer, true),
-            "S-Right" => self.cursor_right(buffer, true),
+            "Return" => buffer.break_line(),
+            "S-Return" => buffer.break_line(),
+            "Backspace" => buffer.remove_selection(),
+            "S-Backspace" => buffer.remove_selection(),
+            "Tab" => buffer.action_insert_text("    ".to_string()),
+            "S-Up" => buffer.cursor_up(1, true),
+            "S-Down" => buffer.cursor_down(1, true),
+            "S-Left" => buffer.cursor_left(true),
+            "S-Right" => buffer.cursor_right(true),
             "C-A" => self.select_all(buffer),
-            "C-C" => self.clipboard_copy(buffer),
+            "C-C" => buffer.clipboard_copy(),
             "C-S" => buffer.save(),
-            "C-V" => self.clipboard_paste(buffer),
-            "C-X" => self.clipboard_cut(buffer),
+            "C-V" => buffer.clipboard_paste(),
+            "C-X" => buffer.clipboard_cut(),
             "C-Z" => buffer.undo(),
             "C-Right" => {
-                let (x, y) = buffer.next_word(self.cursor_x, self.cursor_y);
-                self.cursor_x = x;
-                self.cursor_y = y;
-                self.set_selection(false);
+                let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
+                buffer.cursor_x = x;
+                buffer.cursor_y = y;
+                buffer.set_selection(false);
             }
             "C-Left" => {
-                let (x, y) = buffer.prev_word(self.cursor_x, self.cursor_y);
-                self.cursor_x = x;
-                self.cursor_y = y;
-                self.set_selection(false);
+                let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
+                buffer.cursor_x = x;
+                buffer.cursor_y = y;
+                buffer.set_selection(false);
             }
             "C-S-Right" => {
-                let (x, y) = buffer.next_word(self.cursor_x, self.cursor_y);
-                self.cursor_x = x;
-                self.cursor_y = y;
+                let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
+                buffer.cursor_x = x;
+                buffer.cursor_y = y;
             }
             "C-S-Left" => {
-                let (x, y) = buffer.prev_word(self.cursor_x, self.cursor_y);
-                self.cursor_x = x;
-                self.cursor_y = y;
+                let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
+                buffer.cursor_x = x;
+                buffer.cursor_y = y;
             }
             "C-S-Z" => buffer.redo(),
             "C-S-\\" => {
@@ -310,36 +298,6 @@ impl<'a> Pane<'a> {
         length
     }
 
-    pub fn insert_text(&mut self, buffer: &mut Buffer, text: String) {
-        let (x1, y1, x2, y2) = self.get_selection();
-        let (new_x, new_y) = buffer.replace_text(x1, y1, x2, y2, text);
-        self.cursor_x = new_x;
-        self.cursor_y = new_y;
-        self.set_selection(false);
-    }
-
-    pub fn clipboard_paste(&mut self, buffer: &mut Buffer) {
-        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        if let Ok(s) = ctx.get_contents() {
-            buffer.insert_text(self.cursor_x, self.cursor_y, s);
-        }
-    }
-
-    pub fn clipboard_copy(&mut self, buffer: &mut Buffer) {
-        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        let (x1, y1, x2, y2) = self.get_selection();
-        let s = buffer.do_delete(x1, y1, x2, y2);
-        buffer.do_insert(x1, y2, s.clone());
-        ctx.set_contents(s).unwrap();
-    }
-
-    pub fn clipboard_cut(&mut self, buffer: &mut Buffer) {
-        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        let (x1, y1, x2, y2) = self.get_selection();
-        let s = buffer.do_delete(x1, y1, x2, y2);
-        ctx.set_contents(s).unwrap();
-    }
-
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
         let scroll_delta = self.scroll_idx as i32 * self.line_height as i32 - self.scroll_offset;
         let num_lines = ((f64::from(self.h) + f64::from(scroll_delta.abs()))
@@ -350,78 +308,10 @@ impl<'a> Pane<'a> {
         (first, last)
     }
 
-    pub fn select_all(&mut self, buffer: &Buffer) {
-        self.sel_y = 0;
-        self.sel_x = 0;
-        self.cursor_y = max(0, buffer.len() as i32 - 1) as usize;
-        self.cursor_x = buffer.line_len(self.cursor_y);
+    pub fn select_all(&mut self, buffer: &mut Buffer) {
+        buffer.select_all();
         let (first, _last) = self.get_lines_on_screen(buffer);
         self.scroll_idx = first;
-        self.set_selection(true);
-    }
-
-    pub fn select_line(&mut self, line: usize, buffer: &Buffer) {
-        self.cursor_y = min(line, max(0, buffer.len() as i32 - 1) as usize);
-        self.sel_y = self.cursor_y;
-        self.cursor_x = buffer.line_len(self.sel_y);
-        self.sel_x = 0;
-    }
-
-    pub fn cursor_up(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        self.cursor_y = max(0, self.cursor_y as i32 - num as i32) as usize;
-        self.cursor_x = max(
-            min(self.cursor_x, buffer.line_len(self.cursor_y)),
-            min(self.max_cursor_x, buffer.line_len(self.cursor_y)),
-        );
-        self.set_selection(extend_selection);
-    }
-
-    pub fn cursor_down(&mut self, num: usize, buffer: &Buffer, extend_selection: bool) {
-        self.cursor_y = min(buffer.len() - 1, self.cursor_y + num);
-        self.cursor_x = max(
-            min(self.cursor_x, buffer.line_len(self.cursor_y)),
-            min(self.max_cursor_x, buffer.line_len(self.cursor_y)),
-        );
-        self.set_selection(extend_selection);
-    }
-
-    pub fn cursor_left(&mut self, buffer: &Buffer, extend_selection: bool) {
-        let (x, y) = buffer.prev_char(self.cursor_x, self.cursor_y);
-        self.cursor_x = x;
-        self.cursor_y = y;
-        self.max_cursor_x = self.cursor_x;
-        self.set_selection(extend_selection);
-    }
-
-    pub fn cursor_right(&mut self, buffer: &Buffer, extend_selection: bool) {
-        let (x, y) = buffer.next_char(self.cursor_x, self.cursor_y);
-        self.cursor_x = x;
-        self.cursor_y = y;
-        self.max_cursor_x = self.cursor_x;
-        self.set_selection(extend_selection);
-    }
-
-    pub fn break_line(&mut self, buffer: &mut Buffer) {
-        let mut g = buffer.line_graphemes(self.cursor_y);
-        let first_half = g
-            .drain(..self.cursor_x)
-            .collect::<Vec<&str>>()
-            .concat()
-            .to_string();
-        let last_half = g.concat().to_string();
-        buffer.contents[self.cursor_y] = first_half;
-        self.cursor_y += 1;
-        self.cursor_x = 0;
-        self.max_cursor_x = self.cursor_x;
-        buffer.insert_line(self.cursor_y, last_half);
-        self.set_selection(false);
-    }
-
-    pub fn remove_char(&mut self, buffer: &mut Buffer) {
-        let (x1, y1) = buffer.prev_char(self.cursor_x, self.cursor_y);
-        buffer.delete_text(x1, y1, self.cursor_x, self.cursor_y);
-        self.cursor_x = x1;
-        self.cursor_y = y1;
     }
 
     pub fn text_length(&self, text: &str) -> u32 {
@@ -433,38 +323,14 @@ impl<'a> Pane<'a> {
         length
     }
 
-    pub fn set_selection(&mut self, extend_selection: bool) {
-        if !extend_selection {
-            self.sel_x = self.cursor_x;
-            self.sel_y = self.cursor_y;
-        }
-    }
-
-    // A selection is defined by the cursor position as one corner
-    // and the selection position at the other. This function
-    // returns those corners in order: (x1, y1, x2, y2)
-    // where x1 and y1 are earlier in the buffer than x2 and y2
-    pub fn get_selection(&self) -> (usize, usize, usize, usize) {
-        if self.sel_y > self.cursor_y || self.sel_y == self.cursor_y && self.sel_x > self.cursor_x {
-            return (self.cursor_x, self.cursor_y, self.sel_x, self.sel_y);
-        }
-        (self.sel_x, self.sel_y, self.cursor_x, self.cursor_y)
-    }
-
-    pub fn remove_selection(&mut self, buffer: &mut Buffer) {
-        let (x1, y1, x2, y2) = self.get_selection();
-        if x1 == x2 && y1 == y2 {
-            self.remove_char(buffer);
-        } else {
-            buffer.delete_text(x1, y1, x2, y2);
-            self.cursor_x = x1;
-            self.cursor_y = y1;
-        }
-        self.set_selection(false);
-    }
-
     // Set the selection/cursor positions based on screen coordinates.
-    pub fn set_selection_from_screen(&mut self, buffer: &Buffer, x: i32, y: i32, extend: bool) {
+    pub fn set_selection_from_screen(
+        &mut self,
+        mut buffer: &mut Buffer,
+        x: i32,
+        y: i32,
+        extend: bool,
+    ) {
         let padding = 10;
         let bar_height: u32 = (self.line_height + padding * 2) as u32;
         let mut y_idx = max(
@@ -494,8 +360,8 @@ impl<'a> Pane<'a> {
         }
         x_idx = max(x_idx as i32 - 1, 0) as usize;
 
-        self.cursor_x = x_idx;
-        self.cursor_y = y_idx;
-        self.set_selection(extend);
+        buffer.cursor_x = x_idx;
+        buffer.cursor_y = y_idx;
+        buffer.set_selection(extend);
     }
 }

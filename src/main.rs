@@ -164,7 +164,7 @@ fn main() {
                             0,
                         );
                         fm.current_dir = env::current_dir().unwrap();
-                        fm.update(&mut pane, &mut buffer);
+                        fm.update(&mut buffer);
                         pane.buffer_id = buffers.len();
                         pane_idx = panes.len();
                         buffers.push(buffer);
@@ -195,7 +195,7 @@ fn main() {
                 }
             } else {
                 let pane = &mut panes[pane_idx];
-                let buffer = &mut buffers[pane.buffer_id];
+                let mut buffer = &mut buffers[pane.buffer_id];
                 match event {
                     Event::Quit { .. } => break 'mainloop,
                     Event::KeyUp { keymod, .. } => {
@@ -216,27 +216,30 @@ fn main() {
                     Event::TextInput { text, .. } => match pane.pane_type {
                         PaneType::Buffer => {
                             if !ctrl_pressed && !alt_pressed {
-                                pane.insert_text(buffer, text);
+                                buffer.action_insert_text(text);
                             }
                         }
                         PaneType::FileManager => {
                             fm.current_search.push_str(&text);
                             buffer.name = fm.current_search.clone();
-                            for (i, line) in buffer.contents.iter().enumerate() {
+                            let mut selection = 0;
+                            'searchloop: for (i, line) in buffer.contents.iter().enumerate() {
                                 if line.starts_with(&fm.current_search) {
-                                    pane.select_line(i, &buffer);
+                                    selection = i;
+                                    break 'searchloop;
                                 }
                             }
+                            buffer.select_line(selection);
                         }
                     },
                     Event::MouseButtonDown { x, y, .. } => {
-                        pane.set_selection_from_screen(&buffer, x, y, false)
+                        pane.set_selection_from_screen(&mut buffer, x, y, false)
                     }
                     Event::MouseMotion {
                         mousestate, x, y, ..
                     } => {
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
-                            pane.set_selection_from_screen(&buffer, x, y, true);
+                            pane.set_selection_from_screen(&mut buffer, x, y, true);
                         }
                     }
                     Event::MouseWheel { y, .. } => pane.scroll(buffer, y * 5),
