@@ -158,18 +158,12 @@ fn main() {
                     "C-Q" => break 'mainloop,
                     "C-O" => {
                         let mut buffer = Buffer::new();
-                        let mut pane = Pane::new(
-                            ttf_context.load_font(&path, 16).unwrap(),
-                            PaneType::FileManager,
-                            0,
-                        );
                         fm.current_dir = env::current_dir().unwrap();
                         fm.update(&mut buffer);
+                        let pane = &mut panes[pane_idx];
                         pane.buffer_id = buffers.len();
-                        pane_idx = panes.len();
+                        pane.pane_type = PaneType::FileManager;
                         buffers.push(buffer);
-                        panes.push(pane);
-                        arrange(&canvas, &mut panes);
                     }
                     "C-W" => {
                         if panes.len() > 1 {
@@ -222,18 +216,26 @@ fn main() {
                         PaneType::FileManager => {
                             fm.current_search.push_str(&text);
                             buffer.name = fm.current_search.clone();
-                            let mut selection = 0;
-                            'searchloop: for (i, line) in buffer.contents.iter().enumerate() {
+                            let mut selection = buffer.cursor_y;
+                            'searchloop: for (i, line) in buffer.contents[buffer.cursor_y..].iter().enumerate() {
                                 if line.starts_with(&fm.current_search) {
-                                    selection = i;
+                                    selection = i + buffer.cursor_y;
                                     break 'searchloop;
                                 }
                             }
                             buffer.select_line(selection);
                         }
                     },
-                    Event::MouseButtonDown { x, y, .. } => {
-                        pane.set_selection_from_screen(&mut buffer, x, y, false)
+                    Event::MouseButtonDown { x, y, clicks, .. } => {
+                        pane.set_selection_from_screen(&mut buffer, x, y, false);
+                            if clicks > 1 {
+                                let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
+                                buffer.sel_x = x;
+                                buffer.sel_y = y;
+                                let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
+                                buffer.cursor_x = x;
+                                buffer.cursor_y = y;
+                            }
                     }
                     Event::MouseMotion {
                         mousestate, x, y, ..
@@ -242,7 +244,7 @@ fn main() {
                             pane.set_selection_from_screen(&mut buffer, x, y, true);
                         }
                     }
-                    Event::MouseWheel { y, .. } => pane.scroll(buffer, y * 5),
+                    Event::MouseWheel { y, .. } => pane.scroll(buffer, y * -5),
                     Event::KeyDown { .. } => {}
                     _ => {}
                 }

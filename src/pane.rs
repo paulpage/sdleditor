@@ -184,8 +184,8 @@ impl<'a> Pane<'a> {
             "Down" => buffer.cursor_down(1, false),
             "Left" => buffer.cursor_left(false),
             "Right" => buffer.cursor_right(false),
-            "PageUp" => self.scroll(buffer, 20),
-            "PageDown" => self.scroll(buffer, -20),
+            "PageUp" => self.scroll(buffer, -40),
+            "PageDown" => self.scroll(buffer, 40),
             "Return" => buffer.break_line(),
             "S-Return" => buffer.break_line(),
             "Backspace" => buffer.remove_selection(),
@@ -201,6 +201,10 @@ impl<'a> Pane<'a> {
             "C-V" => buffer.clipboard_paste(),
             "C-X" => buffer.clipboard_cut(),
             "C-Z" => buffer.undo(),
+            "C-Up" => buffer.cursor_up(1, false),
+            "C-Down" => buffer.cursor_down(1, false),
+            "C-S-Up" => buffer.cursor_up(1, true),
+            "C-S-Down" => buffer.cursor_down(1, true),
             "C-Right" => {
                 let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
@@ -247,7 +251,7 @@ impl<'a> Pane<'a> {
     pub fn scroll(&mut self, buffer: &Buffer, lines: i32) {
         self.scroll_idx = min(
             buffer.len(),
-            max(0, self.scroll_idx as i32 - lines) as usize,
+            max(0, self.scroll_idx as i32 + lines) as usize,
         );
     }
 

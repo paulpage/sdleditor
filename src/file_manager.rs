@@ -81,6 +81,18 @@ impl FileManager {
                     buffer.set_selection(false);
                 }
             }
+            "Down" => {
+                buffer.cursor_down(1, false);
+                buffer.select_line(buffer.cursor_y);
+            }
+            "Up" => {
+                buffer.cursor_up(1, false);
+                buffer.select_line(buffer.cursor_y);
+            }
+            "Escape" => {
+                self.current_search.clear();
+                buffer.name = self.current_search.clone();
+            }
             _ => {}
         }
     }
