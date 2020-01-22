@@ -14,13 +14,7 @@ use sdl2::pixels::Color;
 use sdl2::render::WindowCanvas;
 
 mod pane;
-use pane::{Pane, PaneType};
-
-mod buffer;
-use buffer::Buffer;
-
-mod file_manager;
-use file_manager::FileManager;
+use pane::Pane;
 
 fn select_font() -> Option<PathBuf> {
     match font_kit::source::SystemSource::new().select_best_match(
@@ -29,44 +23,6 @@ fn select_font() -> Option<PathBuf> {
     ) {
         Ok(font_kit::handle::Handle::Path { path, .. }) => Some(path),
         _ => None,
-    }
-}
-
-fn draw(
-    panes: &mut Vec<Pane>,
-    buffers: &mut Vec<Buffer>,
-    pane_idx: usize,
-    mut canvas: &mut WindowCanvas,
-) {
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-    for (j, pane) in &mut panes.iter_mut().enumerate() {
-        pane.draw(&mut canvas, &buffers[pane.buffer_id], 5, j == pane_idx);
-    }
-}
-
-fn next<T>(list: &[T], idx: usize) -> usize {
-    (idx + 1) % list.len()
-}
-
-fn prev<T>(list: &[T], idx: usize) -> usize {
-    (idx + list.len() - 1) % list.len()
-}
-
-fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
-    let (w, h) = canvas.window().size();
-
-    let padding = 5;
-    let pane_width = (f64::from(w) / panes.len() as f64).floor() as u32;
-    let pane_height = h;
-    let mut x = 0;
-    let y = 0;
-    for mut pane in &mut panes.iter_mut() {
-        pane.x = x + padding;
-        pane.y = y + padding;
-        pane.w = max(0, pane_width as i32 - (padding * 2) as i32) as u32;
-        pane.h = max(0, pane_height as i32 - (padding * 2) as i32) as u32;
-        x += pane_width as i32;
     }
 }
 
@@ -89,29 +45,17 @@ fn main() {
         .unwrap();
     let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
 
-    let mut buffers: Vec<Buffer> = Vec::new();
-    let mut panes: Vec<Pane> = Vec::new();
-    let mut pane_idx = 0;
+    let mut text = vec![vec![" ".to_string(); 80]; 30];
 
     let args: Vec<String> = env::args().collect();
-    if args.len() > 1 {
-        for arg in &args[1..] {
-            buffers.push(Buffer::from_path(arg.to_string()));
-        }
-    } else {
-        buffers.push(Buffer::new());
-    }
 
-    panes.push(Pane::new(
-        ttf_context.load_font(&path, 16).unwrap(),
-        PaneType::Buffer,
-        0,
+    let mut pane = Pane::new(
+        ttf_context.load_font(&path, 16).unwrap()
     ));
     arrange(&canvas, &mut panes);
 
     let mut ctrl_pressed = false;
     let mut alt_pressed = false;
-    let mut fm = FileManager::new();
     let mut needs_redraw;
 
     'mainloop: loop {
@@ -250,12 +194,6 @@ fn main() {
                     Event::KeyDown { .. } => {}
                     _ => {}
                 }
-            }
-        }
-
-        for pane in &panes {
-            if pane.scroll_offset != pane.scroll_idx as i32 * pane.line_height as i32 {
-                needs_redraw = true;
             }
         }
 

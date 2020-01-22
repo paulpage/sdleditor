@@ -40,6 +40,7 @@ pub struct Pane<'a> {
     pub scroll_idx: usize,
     pub scroll_offset: i32,
     pub line_height: i32,
+    char_width: i32,
     pub font: Font<'a, 'static>,
     font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
 }
@@ -56,6 +57,7 @@ impl<'a> Pane<'a> {
             scroll_idx: 0,
             scroll_offset: 0,
             line_height: font.height(),
+            char_width: font.size_of_char('o').unwrap().0 as i32,
             font,
             font_cache: HashMap::new(),
         }
@@ -103,79 +105,169 @@ impl<'a> Pane<'a> {
 
         let bar_height: i32 = self.line_height as i32 + padding * 2;
 
-        // Draw the contents of the file and the cursor.
-        for (i, entry) in buffer.contents[first_line..last_line]
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| (i + first_line, entry))
-        {
-            let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
-            let midpoint = min(buffer.cursor_x, uentry.len());
-            let line_y =
-                bar_height + padding * 2 + i as i32 * self.line_height as i32 - self.scroll_offset;
+        // TODO: text off bottom?
+        // TODO: cursor
+        // TODO: selection
+        // TODO: factor wrapped lines into starting line
+        let chars_per_line = max(1, (self.w - padding as u32 * 4) / self.char_width as u32);
+        let mut y = 0;
+        let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
+        for (i, line) in buffer.contents[first_line..last_line].iter().enumerate() {
+            let unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
+            let midpoint = min(buffer.cursor_x, unicode_line.len());
+            let mut x = 0;
+            for c in unicode_line {
 
-            // Draw the selection
-            let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
-            if i >= sel_start_y && i <= sel_end_y {
-                let mut x1: u32 = 0;
-                let mut x2: u32 = self.text_length(&buffer.contents[i]);
-                if !buffer.contents[i].is_empty() {
-                    if i == sel_start_y {
-                        x1 = self.text_length(
-                            &buffer.line_graphemes(i)[..sel_start_x].concat().to_string(),
-                        );
-                    }
-                    if i == sel_end_y {
-                        x2 = self.text_length(
-                            &buffer.line_graphemes(i)[..sel_end_x].concat().to_string(),
-                        );
-                    }
-                }
-                if x2 > x1 {
+                // Draw selection
+                // TODO check if it's actually the selection
+                if i >= sel_start_y && i <= sel_end_y {
                     let rect = Rect::new(
-                        padding * 2 + x1 as i32,
-                        line_y,
-                        (x2 - x1) as u32,
+                        (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                        y * self.line_height + bar_height + padding * 2,
+                        self.char_width as u32,
                         self.line_height as u32,
                     );
                     self.fill_rect(&mut canvas, color_selection1, rect);
                 }
-            }
 
-            // Draw the text
-            let midpoint_width = self.draw_text(
-                &mut canvas,
-                color_fg,
-                padding * 2,
-                line_y,
-                &uentry[..midpoint],
-            );
-            self.draw_text(
-                &mut canvas,
-                color_fg,
-                padding * 2 + midpoint_width,
-                line_y,
-                &uentry[midpoint..],
-            );
+                // Draw character
+                if !c.trim().is_empty() {
+                    self.draw_char(
+                        canvas,
+                        color_fg,
+                        (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                        y * self.line_height + padding * 2 + bar_height,
+                        c,
+                    );
+                }
 
-            // Draw the cursor
-            if is_active && i == buffer.cursor_y {
-                let rect = Rect::new(
-                    padding * 2 + midpoint_width as i32,
-                    line_y,
-                    2,
-                    self.line_height as u32,
-                );
-                self.fill_rect(&mut canvas, color_fg, rect);
+                // Draw cursor
+                if is_active && i == buffer.cursor_y {
+                    let rect = Rect::new(
+                        padding * 2 + midpoint as i32 * self.char_width as i32,
+                        y * self.line_height + bar_height + padding * 2,
+                        2,
+                        self.line_height as u32,
+                    );
+                    self.fill_rect(&mut canvas, color_fg, rect);
+                }
+                
+                x += 1;
+                if x == chars_per_line {
+                    x = 0;
+                    y += 1;
+                }
+
+
             }
+            y += 1;
         }
+
+        // Draw the contents of the file and the cursor.
+        // let mut y = 0;
+        // for (i, entry) in buffer.contents[first_line..last_line]
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(i, entry)| (i + first_line, entry))
+        // {
+        //     let uentry = entry.as_str().graphemes(true).collect::<Vec<&str>>();
+        //     let midpoint = min(buffer.cursor_x, uentry.len());
+        //     let line_y =
+        //         bar_height + padding * 2 + y as i32 * self.line_height as i32 - self.scroll_offset;
+
+        //     // Draw the selection
+        //     let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
+        //     if i >= sel_start_y && i <= sel_end_y {
+        //         let mut x1: u32 = 0;
+        //         let mut x2: u32 = self.text_length(&buffer.contents[i]);
+        //         if !buffer.contents[i].is_empty() {
+        //             if i == sel_start_y {
+        //                 x1 = self.text_length(
+        //                     &buffer.line_graphemes(i)[..sel_start_x].concat().to_string(),
+        //                 );
+        //             }
+        //             if i == sel_end_y {
+        //                 x2 = self.text_length(
+        //                     &buffer.line_graphemes(i)[..sel_end_x].concat().to_string(),
+        //                 );
+        //             }
+        //         }
+        //         if x2 > x1 {
+        //             let rect = Rect::new(
+        //                 padding * 2 + x1 as i32,
+        //                 line_y,
+        //                 (x2 - x1) as u32,
+        //                 self.line_height as u32,
+        //             );
+        //             self.fill_rect(&mut canvas, color_selection1, rect);
+        //         }
+        //     }
+
+        //     // Draw the text
+        //     let mut chars_rendered = 0;
+        //     let mut midpoint_width: i32 = 0;
+        //     while chars_rendered < midpoint {
+        //         let (c, w) = self.draw_text(
+        //             &mut canvas,
+        //             color_fg,
+        //             padding * 2,
+        //             padding * 4,
+        //             line_y + y as i32,
+        //             &uentry[chars_rendered..midpoint],
+        //         );
+        //         chars_rendered += c;
+        //         midpoint_width += w;
+        //         if chars_rendered < midpoint {
+        //             y += 1;
+        //             midpoint_width = 0;
+        //         }
+        //         // if extra_lines > 0 {
+        //         // }
+        //         // extra_lines += 1;
+        //     }
+        //     // y = max(orig_y as i32, y as i32 - 1) as usize;
+        //     // chars_rendered = 0;
+        //     // while chars_rendered < uentry[midpoint..].len() {
+        //     while chars_rendered < uentry.len() {
+        //         let (c, w) = self.draw_text(
+        //             &mut canvas,
+        //             color_fg,
+        //             padding * 2 + midpoint_width,
+        //             padding * 4,
+        //             // padding * 2,
+        //             line_y + y as i32,
+        //             &uentry[chars_rendered..],
+        //         );
+        //         chars_rendered += c;
+        //         // midpoint_width += w;
+        //         y += 1;
+        //     }
+
+        // // Draw the cursor
+        // if is_active && i == buffer.cursor_y {
+        //     let rect = Rect::new(
+        //         padding * 2 + midpoint_width as i32,
+        //         line_y,
+        //         2,
+        //         self.line_height as u32,
+        //     );
+        //     self.fill_rect(&mut canvas, color_fg, rect);
+        // }
+        // }
 
         // Draw the bar
         let rect = Rect::new(0, 0, self.w, bar_height as u32);
         self.fill_rect(&mut canvas, color_bar_bg, rect);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
         let bar_text = vec![dirty_text, " ", &buffer.name];
-        self.draw_text(&mut canvas, color_bar_fg, padding, padding, &bar_text[..]);
+        self.draw_text(
+            &mut canvas,
+            color_bar_fg,
+            padding,
+            padding,
+            padding,
+            &bar_text[..],
+        );
     }
 
     pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {
@@ -237,6 +329,35 @@ impl<'a> Pane<'a> {
         false
     }
 
+    pub fn draw_char(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, c: &str) {
+        canvas.set_draw_color(color);
+        let key = FontCacheKey {
+            c: c.to_string(),
+            color,
+        };
+        let tex = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
+            let surface = self.font.render(&c.to_string()).blended(color).unwrap();
+            let texture = canvas
+                .texture_creator()
+                .create_texture_from_surface(&surface)
+                .unwrap();
+            let TextureQuery { width, height, .. } = texture.query();
+            let resource = Rc::new(FontCacheEntry {
+                texture,
+                w: width,
+                h: height,
+            });
+            self.font_cache.insert(key, resource.clone());
+            resource
+        });
+        let texture = &tex.texture;
+        let w = min(self.w as i32 - (x + self.char_width) as i32, tex.w as i32) as u32;
+        let h = min(self.h as i32 - y as i32, tex.h as i32) as u32;
+        let source = Rect::new(0, 0, w, h);
+        let target = Rect::new(self.x + x, self.y + y, w, h);
+        canvas.copy(&texture, Some(source), Some(target)).unwrap();
+    }
+
     pub fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
         canvas.set_draw_color(color);
         let x = min(self.x + self.w as i32, max(self.x, self.x + rect.x));
@@ -260,12 +381,13 @@ impl<'a> Pane<'a> {
         canvas: &mut WindowCanvas,
         color: Color,
         x: i32,
+        padding: i32,
         y: i32,
         text: &[&str],
-    ) -> i32 {
+    ) -> (usize, i32) {
         let mut length: i32 = 0;
         if y > 0 && x > 0 {
-            for c in text.iter().filter(|x| !x.is_empty()) {
+            for (i, c) in text.iter().filter(|x| !x.is_empty()).enumerate() {
                 let key = FontCacheKey {
                     c: c.to_string(),
                     color,
@@ -289,17 +411,16 @@ impl<'a> Pane<'a> {
                 let texture = &tex.texture;
                 let w = min(self.w as i32 - (x + length) as i32, tex.w as i32) as u32;
                 let h = min(self.h as i32 - y as i32, tex.h as i32) as u32;
+                length += w as i32;
+                if length > self.w as i32 - padding {
+                    return (i, self.w as i32);
+                }
                 let source = Rect::new(0, 0, w, h);
                 let target = Rect::new(self.x + x + length as i32, self.y + y, w, h);
                 canvas.copy(&texture, Some(source), Some(target)).unwrap();
-
-                if length > self.w as i32 {
-                    return self.w as i32;
-                }
-                length += w as i32;
             }
         }
-        length
+        (text.len(), length)
     }
 
     pub fn get_lines_on_screen(&self, buffer: &Buffer) -> (usize, usize) {
