@@ -1,6 +1,3 @@
-extern crate clipboard;
-extern crate sdl2;
-
 use std::cmp::max;
 use std::env;
 use std::path::PathBuf;

@@ -6,7 +6,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-extern crate unicode_segmentation;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::buffer::Buffer;
@@ -106,8 +105,6 @@ impl<'a> Pane<'a> {
         let bar_height: i32 = self.line_height as i32 + padding * 2;
 
         // TODO: text off bottom?
-        // TODO: cursor
-        // TODO: selection
         // TODO: factor wrapped lines into starting line
         let chars_per_line = max(1, (self.w - padding as u32 * 4) / self.char_width as u32);
         let mut y = 0;
@@ -116,18 +113,19 @@ impl<'a> Pane<'a> {
             let unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
             let midpoint = min(buffer.cursor_x, unicode_line.len());
             let mut x = 0;
-            for c in unicode_line {
+            for (j, c) in unicode_line.iter().enumerate() {
 
                 // Draw selection
-                // TODO check if it's actually the selection
                 if i >= sel_start_y && i <= sel_end_y {
-                    let rect = Rect::new(
-                        (x * self.char_width as u32 + padding as u32 * 2) as i32,
-                        y * self.line_height + bar_height + padding * 2,
-                        self.char_width as u32,
-                        self.line_height as u32,
-                    );
-                    self.fill_rect(&mut canvas, color_selection1, rect);
+                    if (j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y) {
+                        let rect = Rect::new(
+                            (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                            y * self.line_height + bar_height + padding * 2,
+                            self.char_width as u32,
+                            self.line_height as u32,
+                            );
+                        self.fill_rect(&mut canvas, color_selection1, rect);
+                    }
                 }
 
                 // Draw character

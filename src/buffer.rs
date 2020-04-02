@@ -4,7 +4,6 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 
-extern crate unicode_segmentation;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub struct Buffer {
