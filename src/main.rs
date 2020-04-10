@@ -38,7 +38,7 @@ fn draw(
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     for (j, pane) in &mut panes.iter_mut().enumerate() {
-        pane.draw(&mut canvas, &buffers[pane.buffer_id], 5, j == pane_idx);
+        pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx);
     }
 }
 
@@ -160,6 +160,7 @@ fn main() {
                         let pane = &mut panes[pane_idx];
                         pane.buffer_id = buffers.len();
                         pane.pane_type = PaneType::FileManager;
+                        pane.scroll_offset = 0;
                         buffers.push(buffer);
                     }
                     "C-W" => {
@@ -243,7 +244,9 @@ fn main() {
                             pane.set_selection_from_screen(&mut buffer, x, y, true);
                         }
                     }
-                    Event::MouseWheel { y, .. } => pane.scroll(buffer, y * -5),
+                    Event::MouseWheel { y, .. } => {
+                        pane.scroll(buffer, y * -5);
+                    }
                     Event::KeyDown { .. } => {}
                     _ => {}
                 }
@@ -251,7 +254,7 @@ fn main() {
         }
 
         for pane in &panes {
-            if pane.scroll_offset != pane.scroll_idx as i32 * pane.line_height as i32 {
+            if pane.scroll_lag != 0 {
                 needs_redraw = true;
             }
         }

@@ -167,12 +167,8 @@ impl Buffer {
 
     pub fn break_line(&mut self) {
         let mut g = self.line_graphemes(self.cursor_y);
-        let first_half = g
-            .drain(..self.cursor_x)
-            .collect::<Vec<&str>>()
-            .concat()
-            .to_string();
-        let last_half = g.concat().to_string();
+        let first_half = g.drain(..self.cursor_x).collect::<Vec<&str>>().concat();
+        let last_half = g.concat();
         self.contents[self.cursor_y] = first_half;
         self.cursor_y += 1;
         self.cursor_x = 0;
@@ -317,12 +313,12 @@ impl Buffer {
         let g2 = self.line_graphemes(y2);
         if y1 == y2 {
             undo_buffer.push(g1.drain(x1..x2).collect::<Vec<&str>>().concat());
-            self.contents[y1] = g1.concat().to_string();
+            self.contents[y1] = g1.concat();
         } else {
-            let pre = g1[..x1].concat().to_string();
-            let npre = g1[x1..].concat().to_string();
-            let post = g2[x2..].concat().to_string();
-            let npost = g2[..x2].concat().to_string();
+            let pre = g1[..x1].concat();
+            let npre = g1[x1..].concat();
+            let post = g2[x2..].concat();
+            let npost = g2[..x2].concat();
             for _ in y1..=y2 {
                 undo_buffer.push(self.contents.remove(y1));
             }
@@ -336,8 +332,8 @@ impl Buffer {
 
     pub fn do_insert(&mut self, x: usize, y: usize, text: String) -> (usize, usize) {
         let mut l = self.line_graphemes(y);
-        let start = l.drain(..x).collect::<Vec<&str>>().concat().to_string();
-        let end = l.concat().to_string();
+        let start = l.drain(..x).collect::<Vec<&str>>().concat();
+        let end = l.concat();
         self.contents.remove(y);
         self.insert_line(y, start);
         let mut x = x;
