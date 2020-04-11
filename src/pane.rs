@@ -165,9 +165,10 @@ impl<'a> Pane<'a> {
             if y < self.scroll_offset + self.h as i32 {
                 let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
                 // Needed to draw cursor even if we're on a blank line
-                if unicode_line.len() == 0 {
-                    unicode_line = vec![" "];
-                }
+                unicode_line.push(" ");
+                // if unicode_line.len() == 0 {
+                //     unicode_line = vec![" "];
+                // }
                 let mut x = 0;
                 for (j, c) in unicode_line.iter().enumerate() {
 
@@ -401,14 +402,19 @@ impl<'a> Pane<'a> {
         let mut y_target = 0;
         let mut current_y = 0;
         'main: for (i, line) in buffer.contents.iter().enumerate() {
-            let unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
+            let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
+            unicode_line.push(" ");
             let mut x = 0;
             for (j, _) in unicode_line.iter().enumerate() {
-                if ((current_y - self.scroll_offset) / self.line_height) as usize == y_cell
-                    && x as usize == x_cell
-                {
+                let current_y_cell = (current_y - self.scroll_offset) / self.line_height;
+                if current_y_cell == y_cell as i32 {
                     x_target = j;
                     y_target = i;
+                    if x as usize == x_cell {
+                        break 'main;
+                    }
+                }
+                if current_y_cell > y_cell as i32 {
                     break 'main;
                 }
 
