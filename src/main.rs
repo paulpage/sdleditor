@@ -191,10 +191,10 @@ fn main() {
                 match event {
                     Event::Quit { .. } => break 'mainloop,
                     Event::KeyUp { keymod, .. } => {
-                        if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
+                        if !(keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD)) {
                             ctrl_pressed = false;
                         }
-                        if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
+                        if !(keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD)) {
                             alt_pressed = false;
                         }
                     }
