@@ -270,7 +270,7 @@ impl<'a> Pane<'a> {
             "Right" => buffer.cursor_right(false),
             "PageUp" => self.scroll(buffer, -40),
             "PageDown" => self.scroll(buffer, 40),
-            "Return" => buffer.break_line(),
+            "Return" => buffer.break_line_with_auto_indent(),
             "S-Return" => buffer.break_line(),
             "Backspace" => buffer.remove_selection(),
             "S-Backspace" => buffer.remove_selection(),
@@ -312,6 +312,12 @@ impl<'a> Pane<'a> {
                 buffer.cursor_y = y;
             }
             "C-S-Z" => buffer.redo(),
+            "C-Backspace" => {
+                let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
+                buffer.cursor_x = x;
+                buffer.cursor_y = y;
+                buffer.remove_selection();
+            }
             "C-S-\\" => {
                 buffer.print();
                 return true;
@@ -400,36 +406,21 @@ impl<'a> Pane<'a> {
 
         let mut x_target = 0;
         let mut y_target = 0;
-        let mut current_y = 0;
-        'main: for (i, line) in buffer.contents.iter().enumerate() {
-            let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
-            unicode_line.push(" ");
-            let mut x = 0;
-            for (j, _) in unicode_line.iter().enumerate() {
-                let current_y_cell = (current_y - self.scroll_offset) / self.line_height;
-                if current_y_cell == y_cell as i32 {
-                    x_target = j;
-                    y_target = i;
-                    if x as usize == x_cell {
-                        break 'main;
-                    }
-                }
-                if current_y_cell > y_cell as i32 {
-                    break 'main;
-                }
-
-                x += 1;
-                if x == chars_per_line {
-                    x = 0;
-                    current_y += self.line_height;
-                }
-            }
-            if (current_y - self.scroll_offset) / self.line_height as i32 >= y_cell as i32 {
-                y_target = i;
-                break 'main;
-            }
-            current_y += self.line_height;
+        let line_lengths = buffer.contents.iter().map(|line| line.as_str().graphemes(true).collect::<Vec<&str>>().len() + 1).collect::<Vec<usize>>();
+        let line_count = line_lengths.len();
+        if y_cell > 0 && y_cell < line_count {
+            y_target = y_cell;
+        } else if y_cell >= line_count {
+            y_target = line_count - 1;
         }
+
+        let char_count = line_lengths[y_target];
+        if x_cell > 0 && x_cell < char_count {
+            x_target = x_cell;
+        } else if x_cell >= char_count {
+            x_target = char_count - 1;
+        }
+
         buffer.cursor_x = x_target;
         buffer.cursor_y = y_target;
         buffer.set_selection(extend);

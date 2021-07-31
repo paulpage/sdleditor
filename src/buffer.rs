@@ -177,6 +177,18 @@ impl Buffer {
         self.set_selection(false);
     }
 
+    pub fn break_line_with_auto_indent(&mut self) {
+        self.break_line();
+        let last_line = self.contents[self.cursor_y - 1].clone();
+        for c in last_line.chars() {
+            if c.is_whitespace() {
+                self.action_insert_text(c.to_string());
+            } else {
+                return
+            }
+        }
+    }
+
     pub fn remove_selection(&mut self) {
         let (x1, y1, x2, y2) = self.get_selection();
         if x1 == x2 && y1 == y2 {
@@ -226,17 +238,43 @@ impl Buffer {
     pub fn clipboard_paste(&mut self) {
         let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
         if let Ok(s) = ctx.get_contents() {
-            self.insert_text(self.cursor_x, self.cursor_y, s);
+            let (x2, y2) = self.insert_text(self.cursor_x, self.cursor_y, s);
+            self.cursor_x = x2;
+            self.cursor_y = y2;
+            self.set_selection(false);
         }
     }
 
     pub fn clipboard_copy(&mut self) {
         let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
         let (x1, y1, x2, y2) = self.get_selection();
+        let old_cursor_x = self.cursor_x;
+        let old_cursor_y = self.cursor_y;
         let s = self.do_delete(x1, y1, x2, y2);
-        self.do_insert(x1, y2, s.clone());
+        self.cursor_x = x1;
+        self.cursor_y = y1;
+
+        self.set_selection(false);
+        self.insert_text(self.cursor_x, self.cursor_y, s.clone());
+
+        self.sel_x = x2;
+        self.sel_y = y2;
+        if old_cursor_x != self.cursor_x || old_cursor_y != self.cursor_y {
+            self.swap_cursor_position();
+        }
+
         ctx.set_contents(s).unwrap();
     }
+
+    pub fn swap_cursor_position(&mut self) {
+        let tmp_x = self.sel_x;
+        let tmp_y = self.sel_y;
+        self.sel_x = self.cursor_x;
+        self.sel_y = self.cursor_y;
+        self.cursor_x = tmp_x;
+        self.cursor_y = tmp_y;
+    }
+
 
     pub fn clipboard_cut(&mut self) {
         let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
