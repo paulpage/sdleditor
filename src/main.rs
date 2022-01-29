@@ -20,13 +20,7 @@ mod file_manager;
 use file_manager::FileManager;
 
 fn select_font() -> Option<PathBuf> {
-    match font_kit::source::SystemSource::new().select_best_match(
-        &[font_kit::family_name::FamilyName::Monospace],
-        &font_kit::properties::Properties::new(),
-    ) {
-        Ok(font_kit::handle::Handle::Path { path, .. }) => Some(path),
-        _ => None,
-    }
+    return Some(PathBuf::from("fonts/monospace.ttf"));
 }
 
 fn draw(
