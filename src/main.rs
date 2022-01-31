@@ -8,7 +8,6 @@ use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Mod;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use sdl2::render::WindowCanvas;
 
 mod pane;
 use pane::{Pane, PaneType};
@@ -19,6 +18,9 @@ use buffer::Buffer;
 mod file_manager;
 use file_manager::FileManager;
 
+mod canvas;
+use canvas::{Canvas, Rect};
+
 fn select_font() -> Option<PathBuf> {
     return Some(PathBuf::from("fonts/monospace.ttf"));
 }
@@ -27,10 +29,11 @@ fn draw(
     panes: &mut Vec<Pane>,
     buffers: &mut Vec<Buffer>,
     pane_idx: usize,
-    mut canvas: &mut WindowCanvas,
+    mut canvas: &mut Canvas,
 ) {
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
+    canvas.clear(Color::RGB(0, 0, 0));
+    // canvas.set_draw_color(Color::RGB(0, 0, 0));
+    // canvas.clear();
     for (j, pane) in &mut panes.iter_mut().enumerate() {
         pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx);
     }
@@ -44,8 +47,8 @@ fn prev<T>(list: &[T], idx: usize) -> usize {
     (idx + list.len() - 1) % list.len()
 }
 
-fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
-    let (w, h) = canvas.window().size();
+fn arrange(canvas: &Canvas, panes: &mut Vec<Pane>) {
+    let (w, h) = canvas.window_size();
 
     let padding = 5;
     let pane_width = (f64::from(w) / panes.len() as f64).floor() as u32;
@@ -53,10 +56,12 @@ fn arrange(canvas: &WindowCanvas, panes: &mut Vec<Pane>) {
     let mut x = 0;
     let y = 0;
     for mut pane in &mut panes.iter_mut() {
-        pane.x = x + padding;
-        pane.y = y + padding;
-        pane.w = max(0, pane_width as i32 - (padding * 2) as i32) as u32;
-        pane.h = max(0, pane_height as i32 - (padding * 2) as i32) as u32;
+        pane.rect = Rect {
+            x: x + padding,
+            y: y + padding,
+            w: max(0, pane_width as i32 - (padding * 2) as i32),
+            h: max(0, pane_height as i32 - (padding * 2) as i32),
+        };
         x += pane_width as i32;
     }
 }
@@ -67,18 +72,20 @@ fn main() {
         None => PathBuf::new(),
     };
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsys = sdl_context.video().unwrap();
-    let ttf_context = sdl2::ttf::init().unwrap();
-    let window = video_subsys
-        .window("SDL2_TTF Example", 800, 600)
-        .position_centered()
-        .resizable()
-        .maximized()
-        .opengl()
-        .build()
-        .unwrap();
-    let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
+    let mut sdl_context = sdl2::init().unwrap();
+    let mut canvas = Canvas::new(&mut sdl_context, &path, 16);
+    canvas.set_font(&path, 16);
+    // let video_subsys = sdl_context.video().unwrap();
+    // let ttf_context = sdl2::ttf::init().unwrap();
+    // let window = video_subsys
+    //     .window("SDL2_TTF Example", 800, 600)
+    //     .position_centered()
+    //     .resizable()
+    //     .maximized()
+    //     .opengl()
+    //     .build()
+    //     .unwrap();
+    // let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
 
     let mut buffers: Vec<Buffer> = Vec::new();
     let mut panes: Vec<Pane> = Vec::new();
@@ -94,9 +101,9 @@ fn main() {
     }
 
     panes.push(Pane::new(
-        ttf_context.load_font(&path, 16).unwrap(),
         PaneType::Buffer,
         0,
+        canvas.font_size,
     ));
     arrange(&canvas, &mut panes);
 
@@ -133,9 +140,10 @@ fn main() {
                 match kstr {
                     "C-'" => {
                         panes.push(Pane::new(
-                            ttf_context.load_font(&path, 16).unwrap(),
+                            // ttf_context.load_font(&path, 16).unwrap(),
                             PaneType::Buffer,
                             0,
+                            canvas.font_size,
                         ));
                         arrange(&canvas, &mut panes);
                         pane_idx += 1;
@@ -194,8 +202,8 @@ fn main() {
                     }
                     Event::Window { win_event, .. } => {
                         if let WindowEvent::Resized(w, h) = win_event {
-                            pane.w = max(0, w - 40) as u32;
-                            pane.h = max(0, h - 40) as u32;
+                            pane.rect.w = max(0, w as i32 - 40);
+                            pane.rect.h = max(0, h as i32 - 40);
                             arrange(&canvas, &mut panes);
                         }
                     }
@@ -221,7 +229,7 @@ fn main() {
                         }
                     },
                     Event::MouseButtonDown { x, y, clicks, .. } => {
-                        pane.set_selection_from_screen(&mut buffer, x, y, false);
+                        pane.set_selection_from_screen(&mut canvas, &mut buffer, x, y, false);
                         if clicks > 1 {
                             let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
                             buffer.sel_x = x;
@@ -235,7 +243,7 @@ fn main() {
                         mousestate, x, y, ..
                     } => {
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
-                            pane.set_selection_from_screen(&mut buffer, x, y, true);
+                            pane.set_selection_from_screen(&mut canvas, &mut buffer, x, y, true);
                         }
                     }
                     Event::MouseWheel { y, .. } => {

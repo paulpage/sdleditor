@@ -1,16 +1,12 @@
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Texture, TextureQuery, WindowCanvas};
-use sdl2::ttf::Font;
 use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::rc::Rc;
 
 use regex::Regex;
 
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::buffer::Buffer;
+
+use crate::canvas::{Canvas, Rect, Color};
 
 struct ColorScheme {
     fg: Color,
@@ -38,40 +34,20 @@ pub enum PaneType {
     FileManager,
 }
 
-#[derive(Hash, PartialEq)]
-struct FontCacheKey {
-    c: String,
-    color: Color,
-}
-
-struct FontCacheEntry {
-    texture: Texture,
-    w: u32,
-    h: u32,
-}
-
-impl Eq for FontCacheKey {}
-
-pub struct Pane<'a> {
+pub struct Pane {
     pub pane_type: PaneType,
-    pub x: i32,
-    pub y: i32,
-    pub w: u32,
-    pub h: u32,
+    pub rect: Rect,
     pub buffer_id: usize,
     // pub scroll: i32,
     pub scroll_offset: i32,
     pub scroll_lag: i32,
     pub line_height: i32,
-    char_width: i32,
-    pub font: Font<'a, 'static>,
-    font_cache: HashMap<FontCacheKey, Rc<FontCacheEntry>>,
     syntax: Syntax,
     colors: ColorScheme,
 }
 
-impl<'a> Pane<'a> {
-    pub fn new(font: Font<'a, 'static>, pane_type: PaneType, buffer_id: usize) -> Self {
+impl Pane {
+    pub fn new(pane_type: PaneType, buffer_id: usize, line_height: i32) -> Self {
         // TODO Very incomplete
         let syntax = Syntax {
             line_comment: Regex::new(r"//").unwrap(),
@@ -95,37 +71,25 @@ impl<'a> Pane<'a> {
 
         Pane {
             pane_type,
-            x: 0,
-            y: 0,
-            w: 0,
-            h: 0,
+            rect: Rect::new(0, 0, 0, 0),
             buffer_id,
             // scroll: 0,
             scroll_lag: 0,
             scroll_offset: 0,
-            line_height: font.height(),
-            char_width: font.size_of_char('o').unwrap().0 as i32,
-            font,
-            font_cache: HashMap::new(),
+            line_height: line_height,
             syntax,
             colors,
         }
     }
 
-    pub fn draw(&mut self, mut canvas: &mut WindowCanvas, buffer: &Buffer, is_active: bool) {
+    pub fn draw(&mut self, canvas: &mut Canvas, buffer: &Buffer, is_active: bool) {
         let padding = 5;
-        canvas.set_draw_color(self.colors.ui_bg);
-        let rect = Rect::new(
-            self.x - padding,
-            self.y - padding,
-            self.w + padding as u32 * 2,
-            self.h + padding as u32 * 2,
-        );
-        canvas.fill_rect(rect).unwrap();
-        canvas.set_draw_color(self.colors.bg);
-        let rect = Rect::new(self.x, self.y, self.w, self.h);
-        canvas.fill_rect(rect).unwrap();
 
+        // Fill background with border
+        canvas.set_active_region(self.rect);
+        canvas.fill_rect_with_border(Rect::new(0, 0, self.rect.w, self.rect.h), 5, self.colors.bg, self.colors.ui_bg);
+
+        // Calculate scroll offset
         if self.scroll_lag != 0 {
             let scroll_pixels = min(
                 max(self.line_height / 2, self.scroll_lag.abs() / 3),
@@ -141,7 +105,7 @@ impl<'a> Pane<'a> {
         let mut color = self.colors.fg;
         let mut comment_level = 0;
 
-        let chars_per_line = max(1, (self.w - padding as u32 * 4) / self.char_width as u32);
+        let chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
         let mut y = 0;
         let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
         for (i, line) in buffer.contents.iter().enumerate() {
@@ -162,7 +126,7 @@ impl<'a> Pane<'a> {
             };
             let mut is_line_comment = false;
 
-            if y < self.scroll_offset + self.h as i32 {
+            if y < self.scroll_offset + self.rect.h as i32 {
                 let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
                 // Needed to draw cursor even if we're on a blank line
                 unicode_line.push(" ");
@@ -209,22 +173,21 @@ impl<'a> Pane<'a> {
                         if (j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y)
                         {
                             let rect = Rect::new(
-                                (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                                x * canvas.char_width + padding * 2,
                                 y - self.scroll_offset + bar_height + padding * 2,
-                                self.char_width as u32,
-                                self.line_height as u32,
+                                canvas.char_width,
+                                canvas.font_size,
                             );
-                            self.fill_rect(&mut canvas, self.colors.selection, rect);
+                            canvas.fill_rect(rect, self.colors.selection);
                         }
                     }
 
                     // Draw character
                     if y >= self.scroll_offset {
                         if !c.trim().is_empty() {
-                            self.draw_char(
-                                canvas,
+                            canvas.draw_char(
                                 color,
-                                (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                                x * canvas.char_width + padding * 2,
                                 y - self.scroll_offset + padding * 2 + bar_height,
                                 c,
                             );
@@ -234,12 +197,12 @@ impl<'a> Pane<'a> {
                     // Draw cursor
                     if is_active && i == buffer.cursor_y && j == buffer.cursor_x {
                         let rect = Rect::new(
-                            (x * self.char_width as u32 + padding as u32 * 2) as i32,
+                            x * canvas.char_width + padding * 2,
                             y - self.scroll_offset + padding * 2 + bar_height,
                             2,
-                            self.line_height as u32,
+                            canvas.font_size,
                         );
-                        self.fill_rect(&mut canvas, self.colors.fg, rect);
+                        canvas.fill_rect(rect, self.colors.fg);
                     }
 
                     x += 1;
@@ -253,12 +216,12 @@ impl<'a> Pane<'a> {
         }
 
         // Draw the bar
-        let rect = Rect::new(0, 0, self.w, bar_height as u32);
-        self.fill_rect(&mut canvas, self.colors.ui_bg, rect);
+        let rect = Rect::new(0, 0, self.rect.w, bar_height);
+        canvas.fill_rect(rect, self.colors.ui_bg);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
         let bar_text = vec![dirty_text, " ", &buffer.name];
         for (i, c) in bar_text.iter().filter(|x| !x.is_empty()).enumerate() {
-            self.draw_char(canvas, self.colors.ui_fg, i as i32 * self.char_width + padding, padding, c);
+            canvas.draw_char(self.colors.ui_fg, i as i32 * canvas.char_width + padding, padding, c);
         }
     }
 
@@ -327,46 +290,6 @@ impl<'a> Pane<'a> {
         false
     }
 
-    pub fn draw_char(&mut self, canvas: &mut WindowCanvas, color: Color, x: i32, y: i32, c: &str) {
-        canvas.set_draw_color(color);
-        let key = FontCacheKey {
-            c: c.to_string(),
-            color,
-        };
-        let tex = self.font_cache.get(&key).cloned().unwrap_or_else(|| {
-            let surface = self.font.render(&c.to_string()).blended(color).unwrap();
-            let texture = canvas
-                .texture_creator()
-                .create_texture_from_surface(&surface)
-                .unwrap();
-            let TextureQuery { width, height, .. } = texture.query();
-            let resource = Rc::new(FontCacheEntry {
-                texture,
-                w: width,
-                h: height,
-            });
-            self.font_cache.insert(key, resource.clone());
-            resource
-        });
-        let texture = &tex.texture;
-        let w = min(self.w as i32 - (x + self.char_width) as i32, tex.w as i32) as u32;
-        let h = min(self.h as i32 - y as i32, tex.h as i32) as u32;
-        let source = Rect::new(0, 0, w, h);
-        let target = Rect::new(self.x + x, self.y + y, w, h);
-        canvas.copy(&texture, Some(source), Some(target)).unwrap();
-    }
-
-    pub fn fill_rect(&mut self, canvas: &mut WindowCanvas, color: Color, rect: Rect) {
-        canvas.set_draw_color(color);
-        let x = min(self.x + self.w as i32, max(self.x, self.x + rect.x));
-        let y = min(self.y + self.h as i32, max(self.y, self.y + rect.y));
-        let w = max(0, min(self.w as i32 - rect.x, rect.w + min(0, rect.x))) as u32;
-        let h = max(0, min(self.h as i32 - rect.y, rect.h + min(0, rect.y))) as u32;
-        if w > 0 && h > 0 {
-            canvas.fill_rect(Rect::new(x, y, w, h)).unwrap();
-        }
-    }
-
     pub fn scroll(&mut self, buffer: &Buffer, lines: i32) {
         // TODO We want to clamp this to the top and bottom of the buffer,
         // but it's not as easy as it used to be because of line wrapping
@@ -378,18 +301,10 @@ impl<'a> Pane<'a> {
         buffer.select_all();
     }
 
-    pub fn text_length(&self, text: &str) -> u32 {
-        let mut length = 0;
-        for c in text.chars() {
-            let (x, _) = self.font.size_of_char(c).unwrap();
-            length += x;
-        }
-        length
-    }
-
     // Set the selection/cursor positions based on screen coordinates.
     pub fn set_selection_from_screen(
         &mut self,
+        canvas: &Canvas,
         mut buffer: &mut Buffer,
         x: i32,
         y: i32,
@@ -397,11 +312,11 @@ impl<'a> Pane<'a> {
     ) {
         // TODO This is still broken when I scroll down
         let padding = 5;
-        let chars_per_line = max(1, (self.w - padding as u32 * 4) / self.char_width as u32);
-        let bar_height: u32 = (self.line_height + padding * 2) as u32;
+        let chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
+        let bar_height = canvas.font_size + padding * 2;
 
-        let x_cell = ((x - padding * 2 - (self.char_width / 2)) / self.char_width) as usize;
-        let y_cell = ((y - padding - bar_height as i32 - (self.line_height / 2)) / self.line_height)
+        let x_cell = ((x - padding * 2 - (canvas.char_width / 2)) / canvas.char_width) as usize;
+        let y_cell = ((y - padding - bar_height - (canvas.font_size / 2)) / canvas.font_size)
             as usize;
 
         let mut x_target = 0;
