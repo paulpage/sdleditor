@@ -32,8 +32,6 @@ fn draw(
     mut canvas: &mut Canvas,
 ) {
     canvas.clear(Color::RGB(0, 0, 0));
-    // canvas.set_draw_color(Color::RGB(0, 0, 0));
-    // canvas.clear();
     for (j, pane) in &mut panes.iter_mut().enumerate() {
         pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx);
     }
@@ -75,17 +73,6 @@ fn main() {
     let mut sdl_context = sdl2::init().unwrap();
     let mut canvas = Canvas::new(&mut sdl_context, &path, 16);
     canvas.set_font(&path, 16);
-    // let video_subsys = sdl_context.video().unwrap();
-    // let ttf_context = sdl2::ttf::init().unwrap();
-    // let window = video_subsys
-    //     .window("SDL2_TTF Example", 800, 600)
-    //     .position_centered()
-    //     .resizable()
-    //     .maximized()
-    //     .opengl()
-    //     .build()
-    //     .unwrap();
-    // let mut canvas: WindowCanvas = window.into_canvas().build().unwrap();
 
     let mut buffers: Vec<Buffer> = Vec::new();
     let mut panes: Vec<Pane> = Vec::new();
@@ -116,6 +103,8 @@ fn main() {
         needs_redraw = false;
         for event in sdl_context.event_pump().unwrap().poll_iter() {
             needs_redraw = true;
+            let pane = &mut panes[pane_idx];
+            let mut buffer = &mut buffers[pane.buffer_id];
             if let Event::KeyDown {
                 keycode: Some(kc),
                 keymod,
@@ -137,10 +126,10 @@ fn main() {
                 key_string.push_str(&kc.name());
 
                 let kstr: &str = &key_string.clone();
+
                 match kstr {
                     "C-'" => {
                         panes.push(Pane::new(
-                            // ttf_context.load_font(&path, 16).unwrap(),
                             PaneType::Buffer,
                             0,
                             canvas.font_size,
@@ -173,8 +162,6 @@ fn main() {
                         }
                     }
                     _ => {
-                        let pane = &mut panes[pane_idx];
-                        let buffer = &mut buffers[pane.buffer_id];
                         match pane.pane_type {
                             PaneType::Buffer => {
                                 if pane.handle_keystroke(buffer, kstr) {
@@ -188,8 +175,6 @@ fn main() {
                     }
                 }
             } else {
-                let pane = &mut panes[pane_idx];
-                let mut buffer = &mut buffers[pane.buffer_id];
                 match event {
                     Event::Quit { .. } => break 'mainloop,
                     Event::KeyUp { keymod, .. } => {

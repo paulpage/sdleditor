@@ -14,4 +14,4 @@ rusttype = "0.9.2"
 [dependencies.sdl2]
 version = "0.35.1"
 default-features = false
-features = ["ttf", "unsafe_textures"]
+features = ["unsafe_textures"]
