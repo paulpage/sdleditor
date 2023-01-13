@@ -30,10 +30,12 @@ fn draw(
     buffers: &mut Vec<Buffer>,
     pane_idx: usize,
     mut canvas: &mut Canvas,
+    mouse_x: i32,
+    mouse_y: i32,
 ) {
     canvas.clear(Color::RGB(0, 0, 0));
     for (j, pane) in &mut panes.iter_mut().enumerate() {
-        pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx);
+        pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx, mouse_x, mouse_y);
     }
 }
 
@@ -71,8 +73,8 @@ fn main() {
     };
 
     let mut sdl_context = sdl2::init().unwrap();
-    let mut canvas = Canvas::new(&mut sdl_context, &path, 16);
-    canvas.set_font(&path, 16);
+    let mut canvas = Canvas::new(&mut sdl_context, &path, 32);
+    canvas.set_font(&path, 32);
 
     let mut buffers: Vec<Buffer> = Vec::new();
     let mut panes: Vec<Pane> = Vec::new();
@@ -98,6 +100,9 @@ fn main() {
     let mut alt_pressed = false;
     let mut fm = FileManager::new();
     let mut needs_redraw;
+
+    let mut mouse_x = 0;
+    let mut mouse_y = 0;
 
     'mainloop: loop {
         needs_redraw = false;
@@ -227,6 +232,8 @@ fn main() {
                     Event::MouseMotion {
                         mousestate, x, y, ..
                     } => {
+                        mouse_x = x;
+                        mouse_y = y;
                         if mousestate.is_mouse_button_pressed(MouseButton::Left) {
                             pane.set_selection_from_screen(&mut canvas, &mut buffer, x, y, true);
                         }
@@ -247,7 +254,7 @@ fn main() {
         }
 
         if needs_redraw {
-            draw(&mut panes, &mut buffers, pane_idx, &mut canvas);
+            draw(&mut panes, &mut buffers, pane_idx, &mut canvas, mouse_x, mouse_y);
             canvas.present();
         }
 

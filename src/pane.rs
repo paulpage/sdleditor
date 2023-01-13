@@ -38,12 +38,15 @@ pub struct Pane {
     pub pane_type: PaneType,
     pub rect: Rect,
     pub buffer_id: usize,
-    // pub scroll: i32,
     pub scroll_offset: i32,
     pub scroll_lag: i32,
     pub line_height: i32,
     syntax: Syntax,
     colors: ColorScheme,
+    chars_per_line: i32,
+    cursor_x: usize,
+    cursor_y: usize,
+    display_line_count: i32,
 }
 
 impl Pane {
@@ -73,16 +76,21 @@ impl Pane {
             pane_type,
             rect: Rect::new(0, 0, 0, 0),
             buffer_id,
-            // scroll: 0,
             scroll_lag: 0,
             scroll_offset: 0,
             line_height: line_height,
             syntax,
             colors,
+            chars_per_line: 1,
+            cursor_x: 0,
+            cursor_y: 0,
+            display_line_count: 0,
         }
     }
 
-    pub fn draw(&mut self, canvas: &mut Canvas, buffer: &Buffer, is_active: bool) {
+    // TODO do we have to pass mouse_x and mouse_y everywhere?
+    pub fn draw(&mut self, canvas: &mut Canvas, buffer: &Buffer, is_active: bool, mouse_x: i32, mouse_y: i32) {
+
         let padding = 5;
 
         // Fill background with border
@@ -105,7 +113,7 @@ impl Pane {
         let mut color = self.colors.fg;
         let mut comment_level = 0;
 
-        let chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
+        self.chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
         let mut y = 0;
         let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
         for (i, line) in buffer.contents.iter().enumerate() {
@@ -126,13 +134,10 @@ impl Pane {
             };
             let mut is_line_comment = false;
 
-            if y < self.scroll_offset + self.rect.h as i32 {
+            if y * self.line_height < self.scroll_offset + self.rect.h as i32 {
                 let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
                 // Needed to draw cursor even if we're on a blank line
                 unicode_line.push(" ");
-                // if unicode_line.len() == 0 {
-                //     unicode_line = vec![" "];
-                // }
                 let mut x = 0;
                 for (j, c) in unicode_line.iter().enumerate() {
 
@@ -168,13 +173,23 @@ impl Pane {
                         color = self.colors.comment;
                     }
 
+                    let screen_x = x * canvas.char_width + padding * 2;
+                    let screen_y = y * self.line_height - self.scroll_offset + padding * 2 + bar_height;
+
+                    if screen_y + canvas.font_size > mouse_y && screen_y <= mouse_y {
+                        self.cursor_y = i;
+                        if screen_x + canvas.char_width > mouse_x && screen_x <= mouse_x {
+                            self.cursor_x = j;
+                        }
+                    }
+
                     // Draw selection
                     if i >= sel_start_y && i <= sel_end_y {
                         if (j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y)
                         {
                             let rect = Rect::new(
-                                x * canvas.char_width + padding * 2,
-                                y - self.scroll_offset + bar_height + padding * 2,
+                                screen_x,
+                                screen_y,
                                 canvas.char_width,
                                 canvas.font_size,
                             );
@@ -183,12 +198,13 @@ impl Pane {
                     }
 
                     // Draw character
-                    if y >= self.scroll_offset {
+                    if y * self.line_height >= self.scroll_offset {
                         if !c.trim().is_empty() {
+
                             canvas.draw_char(
                                 color,
-                                x * canvas.char_width + padding * 2,
-                                y - self.scroll_offset + padding * 2 + bar_height,
+                                screen_x,
+                                screen_y,
                                 c,
                             );
                         }
@@ -197,8 +213,8 @@ impl Pane {
                     // Draw cursor
                     if is_active && i == buffer.cursor_y && j == buffer.cursor_x {
                         let rect = Rect::new(
-                            x * canvas.char_width + padding * 2,
-                            y - self.scroll_offset + padding * 2 + bar_height,
+                            screen_x,
+                            screen_y,
                             2,
                             canvas.font_size,
                         );
@@ -206,14 +222,15 @@ impl Pane {
                     }
 
                     x += 1;
-                    if x == chars_per_line {
+                    if x == self.chars_per_line {
                         x = 0;
-                        y += self.line_height;
+                        y += 1;
                     }
                 }
-                y += self.line_height;
+                y += 1;
             }
         }
+        self.display_line_count = y;
 
         // Draw the bar
         let rect = Rect::new(0, 0, self.rect.w, bar_height);
@@ -223,6 +240,7 @@ impl Pane {
         for (i, c) in bar_text.iter().filter(|x| !x.is_empty()).enumerate() {
             canvas.draw_char(self.colors.ui_fg, i as i32 * canvas.char_width + padding, padding, c);
         }
+
     }
 
     pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {
@@ -291,9 +309,22 @@ impl Pane {
     }
 
     pub fn scroll(&mut self, buffer: &Buffer, lines: i32) {
-        // TODO We want to clamp this to the top and bottom of the buffer,
-        // but it's not as easy as it used to be because of line wrapping
-        self.scroll_lag += lines * self.line_height;
+        let padding = 5;
+        let bar_height: i32 = self.line_height as i32 + padding * 2;
+
+        let mut new_value = self.scroll_lag + lines * self.line_height;
+        let new_offset = (self.scroll_offset + new_value) / self.line_height;
+
+        let scrolloff_start = 0;
+        let scrolloff_end = 5;
+        let end_val = max(0, self.display_line_count + scrolloff_end - (self.rect.h - bar_height) / self.line_height);
+        if new_offset < -scrolloff_start {
+            new_value = -scrolloff_start * self.line_height - self.scroll_offset;
+        } else if new_offset > end_val {
+            new_value = end_val * self.line_height - self.scroll_offset;
+        }
+
+        self.scroll_lag = new_value;
     }
 
     pub fn select_all(&mut self, buffer: &mut Buffer) {
@@ -301,38 +332,43 @@ impl Pane {
         buffer.select_all();
     }
 
+    fn get_focused_cell(
+        &mut self,
+        canvas: &Canvas,
+        x: i32,
+        y: i32,
+    ) -> (usize, usize) {
+        let padding = 5;
+        let bar_height = canvas.font_size + padding * 2;
+        let x_cell = ((x - padding * 2 - (canvas.char_width / 2)) / canvas.char_width) as usize;
+        let y_cell = ((y - padding - bar_height - (canvas.font_size / 2)) / canvas.font_size)
+            as usize;
+        (x_cell, y_cell)
+    }
+
     // Set the selection/cursor positions based on screen coordinates.
     pub fn set_selection_from_screen(
         &mut self,
         canvas: &Canvas,
         mut buffer: &mut Buffer,
-        x: i32,
-        y: i32,
+        mouse_x: i32,
+        mouse_y: i32,
         extend: bool,
     ) {
-        // TODO This is still broken when I scroll down
-        let padding = 5;
-        let chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
-        let bar_height = canvas.font_size + padding * 2;
-
-        let x_cell = ((x - padding * 2 - (canvas.char_width / 2)) / canvas.char_width) as usize;
-        let y_cell = ((y - padding - bar_height - (canvas.font_size / 2)) / canvas.font_size)
-            as usize;
-
         let mut x_target = 0;
         let mut y_target = 0;
         let line_lengths = buffer.contents.iter().map(|line| line.as_str().graphemes(true).collect::<Vec<&str>>().len() + 1).collect::<Vec<usize>>();
         let line_count = line_lengths.len();
-        if y_cell > 0 && y_cell < line_count {
-            y_target = y_cell;
-        } else if y_cell >= line_count {
+        if self.cursor_y > 0 && self.cursor_y < line_count {
+            y_target = self.cursor_y;
+        } else if self.cursor_y >= line_count {
             y_target = line_count - 1;
         }
 
         let char_count = line_lengths[y_target];
-        if x_cell > 0 && x_cell < char_count {
-            x_target = x_cell;
-        } else if x_cell >= char_count {
+        if self.cursor_x > 0 && self.cursor_x < char_count {
+            x_target = self.cursor_x;
+        } else if self.cursor_x >= char_count {
             x_target = char_count - 1;
         }
 
