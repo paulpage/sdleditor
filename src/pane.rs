@@ -176,9 +176,9 @@ impl Pane {
                     let screen_x = x * canvas.char_width + padding * 2;
                     let screen_y = y * self.line_height - self.scroll_offset + padding * 2 + bar_height;
 
-                    if screen_y + canvas.font_size > mouse_y && screen_y <= mouse_y {
+                    if screen_y - self.rect.y + canvas.font_size > mouse_y && screen_y - self.rect.y <= mouse_y {
                         self.cursor_y = i;
-                        if screen_x + canvas.char_width > mouse_x && screen_x <= mouse_x {
+                        if screen_x - self.rect.x + canvas.char_width > mouse_x && screen_x - self.rect.x <= mouse_x {
                             self.cursor_x = j;
                         }
                     }
