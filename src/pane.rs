@@ -106,7 +106,7 @@ impl Pane {
 
         let bar_height = self.line_height + padding * 2.0;
 
-        let mut color = self.colors.fg;
+        let mut color;
         let mut comment_level = 0;
 
         self.chars_per_line = f32::max(1.0, (self.rect.width - padding * 4.0) / app.char_width) as i32;
@@ -114,10 +114,10 @@ impl Pane {
         let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
         for (i, line) in buffer.contents.iter().enumerate() {
 
-            let has_line_comment = self.syntax.line_comment.is_match(line);
+            // let has_line_comment = self.syntax.line_comment.is_match(line);
             let has_block_comment_start = self.syntax.block_comment_start.is_match(line);
             let has_block_comment_end = self.syntax.block_comment_end.is_match(line);
-            let has_line_comment = self.syntax.line_comment.is_match(line);
+            // let has_line_comment = self.syntax.line_comment.is_match(line);
             let block_comment_start = if has_block_comment_start {
                 self.syntax.block_comment_start.find_iter(line).collect::<Vec<_>>()
             } else {
@@ -158,10 +158,8 @@ impl Pane {
                                     block_overlaps = true;
                                 }
                             }
-                            if j == m.start() {
-                                if !has_block_comment_end || !block_overlaps {
-                                    is_line_comment = true;
-                                }
+                            if j == m.start() && (!has_block_comment_end || !block_overlaps) {
+                                is_line_comment = true;
                             }
                         }
                     }
@@ -170,7 +168,7 @@ impl Pane {
                     }
 
                     let screen_x = x as f32 * app.char_width + padding * 2.0;
-                    let screen_y = y as f32 * self.line_height as f32 - self.scroll_offset as f32 + padding * 2.0 + bar_height;
+                    let screen_y = y as f32 * self.line_height - self.scroll_offset as f32 + padding * 2.0 + bar_height;
 
                     if screen_y - self.rect.y + app.font_size > app.mouse.y && screen_y - self.rect.y <= app.mouse.y {
                         self.cursor_y = i;
@@ -180,38 +178,32 @@ impl Pane {
                     }
 
                     // Draw selection
-                    if i >= sel_start_y && i <= sel_end_y {
-                        if (j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y)
-                        {
-                            let rect = Rect::new(
-                                self.rect.x + screen_x,
-                                self.rect.y + screen_y,
-                                app.char_width,
-                                app.font_size,
-                            );
-                            app.draw_rect(rect, self.colors.selection);
-                        }
+                    if i >= sel_start_y && i <= sel_end_y && ((j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y)) {
+                        let rect = Rect::new(
+                            self.rect.x + screen_x,
+                            self.rect.y + screen_y,
+                            app.char_width,
+                            app.font_size,
+                        );
+                        app.draw_rect(rect, self.colors.selection);
                     }
 
                     // Draw character
-                    if y as f32 * self.line_height >= self.scroll_offset as f32 {
-                        if !c.trim().is_empty() {
-
-                            app.draw_text(
-                                c,
-                                self.rect.x + screen_x,
-                                self.rect.y + screen_y,
-                                app.font_size,
-                                color,
-                            );
-                        }
+                    if y as f32 * self.line_height >= self.scroll_offset as f32 && !c.trim().is_empty() {
+                        app.draw_text(
+                            c,
+                            self.rect.x + screen_x,
+                            self.rect.y + screen_y,
+                            app.font_size,
+                            color,
+                        );
                     }
 
                     // Draw cursor
                     if is_active && i == buffer.cursor_y && j == buffer.cursor_x {
                         let rect = Rect::new(
-                            self.rect.x + screen_x as f32,
-                            self.rect.y + screen_y as f32,
+                            self.rect.x + screen_x,
+                            self.rect.y + screen_y,
                             2.0,
                             app.font_size,
                         );
@@ -246,8 +238,8 @@ impl Pane {
             "down" => buffer.cursor_down(1, false),
             "left" => buffer.cursor_left(false),
             "right" => buffer.cursor_right(false),
-            "pageup" => self.scroll(buffer, -40.0),
-            "pagedown" => self.scroll(buffer, 40.0),
+            "pageup" => self.scroll(-40.0),
+            "pagedown" => self.scroll(40.0),
             "return" => buffer.break_line_with_auto_indent(),
             "s-return" => buffer.break_line(),
             "backspace" => buffer.remove_selection(),
@@ -305,7 +297,7 @@ impl Pane {
         false
     }
 
-    pub fn scroll(&mut self, buffer: &Buffer, lines: f32) {
+    pub fn scroll(&mut self, lines: f32) {
         let padding = 5.0;
         let bar_height: f32 = self.line_height + padding * 2.0;
 

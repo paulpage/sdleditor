@@ -16,13 +16,13 @@ mod file_manager;
 use file_manager::FileManager;
 
 fn select_font() -> Option<PathBuf> {
-    return Some(PathBuf::from("fonts/monospace.ttf"));
+    Some(PathBuf::from("fonts/monospace.ttf"))
 }
 
 fn draw(
     app: &mut App,
-    panes: &mut Vec<Pane>,
-    buffers: &mut Vec<Buffer>,
+    panes: &mut [Pane],
+    buffers: &mut [Buffer],
     pane_idx: usize,
 ) {
     app.clear(Color::new(0, 0, 0));
@@ -87,10 +87,9 @@ fn main() {
     arrange(&app, &mut panes);
 
     let mut fm = FileManager::new();
-    let mut needs_redraw = false;
 
     while !app.should_quit() {
-        needs_redraw = app.has_events;
+        let mut needs_redraw = app.has_events;
 
         let mut should_quit = false;
         for key in &app.keys_pressed {
@@ -129,15 +128,15 @@ fn main() {
                     }
                 }
                 _ => {
-                    let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+                    let buf = &mut buffers[panes[pane_idx].buffer_id];
                     match panes[pane_idx].pane_type {
                         PaneType::Buffer => {
-                            if panes[pane_idx].handle_keystroke(&mut buf, kstr.as_str()) {
+                            if panes[pane_idx].handle_keystroke(buf, kstr.as_str()) {
                                 should_quit = true;
                             }
                         }
                         PaneType::FileManager => {
-                            fm.handle_key(&mut panes[pane_idx], &mut buf, kstr.as_str());
+                            fm.handle_key(&mut panes[pane_idx], buf, kstr.as_str());
                         }
                     }
                 }
@@ -160,7 +159,7 @@ fn main() {
                     buf.action_insert_text(text.to_string());
                 }
                 PaneType::FileManager => {
-                    fm.current_search.push_str(&text);
+                    fm.current_search.push_str(text);
                     buf.name = fm.current_search.clone();
                     let mut selection = buf.cursor_y;
                     'searchloop: for (i, line) in
@@ -178,7 +177,7 @@ fn main() {
 
         if app.mouse_left_pressed {
             let mut buf = &mut buffers[panes[pane_idx].buffer_id];
-            panes[pane_idx].set_selection_from_screen(&mut buf, false);
+            panes[pane_idx].set_selection_from_screen(buf, false);
             if app.mouse_left_clicks > 1 {
                 let (x, y) = buf.prev_word(buf.cursor_x, buf.cursor_y);
                 buf.sel_x = x;
@@ -189,12 +188,11 @@ fn main() {
             }
         }
         if app.mouse_left_down {
-            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
-            panes[pane_idx].set_selection_from_screen(&mut buf, true);
+            let buf = &mut buffers[panes[pane_idx].buffer_id];
+            panes[pane_idx].set_selection_from_screen(buf, true);
         }
         if app.scroll.y != 0.0 {
-            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
-            panes[pane_idx].scroll(&mut buf, app.scroll.y * -5.0);
+            panes[pane_idx].scroll(app.scroll.y * -5.0);
         }
 
         for pane in &panes {

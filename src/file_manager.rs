@@ -70,7 +70,7 @@ impl FileManager {
                         self.current_dir =
                             Path::join(&self.current_dir, &self.entries[buffer.sel_y].name);
                     }
-                    self.update(&mut buffer);
+                    self.update(buffer);
                 } else {
                     let path = Path::join(&env::current_dir().unwrap(), &self.current_dir);
                     let f = Path::join(&path, self.entries[buffer.sel_y].name.clone());
