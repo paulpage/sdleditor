@@ -53,13 +53,13 @@ impl FileManager {
 
     pub fn handle_key(&mut self, mut pane: &mut Pane, mut buffer: &mut Buffer, kstr: &str) {
         match kstr {
-            "Backspace" => {
+            "backspace" => {
                 if !self.current_search.is_empty() {
                     self.current_search.remove(self.current_search.len() - 1);
                     buffer.name = self.current_search.clone();
                 }
             }
-            "Return" => {
+            "return" => {
                 if self.entries[buffer.sel_y].is_dir {
                     let entry = &self.entries[buffer.sel_y].name;
                     if entry == ".." {
@@ -81,15 +81,15 @@ impl FileManager {
                     buffer.set_selection(false);
                 }
             }
-            "Down" => {
+            "down" => {
                 buffer.cursor_down(1, false);
                 buffer.select_line(buffer.cursor_y);
             }
-            "Up" => {
+            "up" => {
                 buffer.cursor_up(1, false);
                 buffer.select_line(buffer.cursor_y);
             }
-            "Escape" => {
+            "escape" => {
                 self.current_search.clear();
                 buffer.name = self.current_search.clone();
             }

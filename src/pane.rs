@@ -1,12 +1,9 @@
-use std::cmp::{max, min};
-
+use pgfx::app::App;
+use pgfx::types::{Color, Rect};
 use regex::Regex;
-
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::buffer::Buffer;
-
-use crate::canvas::{Canvas, Rect, Color};
 
 struct ColorScheme {
     fg: Color,
@@ -39,8 +36,8 @@ pub struct Pane {
     pub rect: Rect,
     pub buffer_id: usize,
     pub scroll_offset: i32,
-    pub scroll_lag: i32,
-    pub line_height: i32,
+    pub scroll_lag: f32,
+    pub line_height: f32,
     syntax: Syntax,
     colors: ColorScheme,
     chars_per_line: i32,
@@ -50,7 +47,7 @@ pub struct Pane {
 }
 
 impl Pane {
-    pub fn new(pane_type: PaneType, buffer_id: usize, line_height: i32) -> Self {
+    pub fn new(pane_type: PaneType, buffer_id: usize, line_height: f32) -> Self {
         // TODO Very incomplete
         let syntax = Syntax {
             line_comment: Regex::new(r"//").unwrap(),
@@ -62,23 +59,23 @@ impl Pane {
             has_nested_comments: true,
         };
         let colors = ColorScheme {
-            fg: Color::RGB(253, 244, 193),
-            bg: Color::RGB(40, 40, 40),
-            ui_fg: Color::RGB(253, 244, 193),
-            ui_bg: Color::RGB(80, 73, 69),
-            ui_inactive_fg: Color::RGB(189, 174, 147),
-            ui_inactive_bg: Color::RGB(60, 56, 54),
-            selection: Color::RGB(168, 153, 132),
-            comment: Color::RGB(168, 153, 132), // TODO same as selection
+            fg: Color::new(253, 244, 193),
+            bg: Color::new(40, 40, 40),
+            ui_fg: Color::new(253, 244, 193),
+            ui_bg: Color::new(80, 73, 69),
+            ui_inactive_fg: Color::new(189, 174, 147),
+            ui_inactive_bg: Color::new(60, 56, 54),
+            selection: Color::new(168, 153, 132),
+            comment: Color::new(168, 153, 132), // TODO same as selection
         };
 
         Pane {
             pane_type,
-            rect: Rect::new(0, 0, 0, 0),
+            rect: Rect::new(0.0, 0.0, 0.0, 0.0),
             buffer_id,
-            scroll_lag: 0,
+            scroll_lag: 0.0,
             scroll_offset: 0,
-            line_height: line_height,
+            line_height,
             syntax,
             colors,
             chars_per_line: 1,
@@ -88,32 +85,31 @@ impl Pane {
         }
     }
 
-    // TODO do we have to pass mouse_x and mouse_y everywhere?
-    pub fn draw(&mut self, canvas: &mut Canvas, buffer: &Buffer, is_active: bool, mouse_x: i32, mouse_y: i32) {
+    pub fn draw(&mut self, app: &mut App, buffer: &Buffer, is_active: bool) {
 
-        let padding = 5;
+        let padding = 5.0;
 
         // Fill background with border
-        canvas.set_active_region(self.rect);
-        canvas.fill_rect_with_border(Rect::new(0, 0, self.rect.w, self.rect.h), 5, self.colors.bg, self.colors.ui_bg);
+        app.draw_rect(self.rect, self.colors.ui_bg);
+        app.draw_rect(Rect::new(self.rect.x + 5.0, self.rect.y + 5.0, self.rect.width - 10.0, self.rect.height - 10.0), self.colors.bg);
 
         // Calculate scroll offset
-        if self.scroll_lag != 0 {
-            let scroll_pixels = min(
-                max(self.line_height / 2, self.scroll_lag.abs() / 3),
+        if self.scroll_lag != 0.0 {
+            let scroll_pixels = f32::min(
+                f32::max(self.line_height / 2.0, self.scroll_lag.abs() / 3.0),
                 self.scroll_lag.abs(),
             );
             let direction = self.scroll_lag / self.scroll_lag.abs();
-            self.scroll_offset += scroll_pixels * direction;
+            self.scroll_offset += (scroll_pixels * direction) as i32;
             self.scroll_lag -= scroll_pixels * direction;
         }
 
-        let bar_height: i32 = self.line_height as i32 + padding * 2;
+        let bar_height = self.line_height + padding * 2.0;
 
         let mut color = self.colors.fg;
         let mut comment_level = 0;
 
-        self.chars_per_line = max(1, (self.rect.w - padding * 4) / canvas.char_width);
+        self.chars_per_line = f32::max(1.0, (self.rect.width - padding * 4.0) / app.char_width) as i32;
         let mut y = 0;
         let (sel_start_x, sel_start_y, sel_end_x, sel_end_y) = buffer.get_selection();
         for (i, line) in buffer.contents.iter().enumerate() {
@@ -134,7 +130,7 @@ impl Pane {
             };
             let mut is_line_comment = false;
 
-            if y * self.line_height < self.scroll_offset + self.rect.h as i32 {
+            if y as f32 * self.line_height < self.scroll_offset as f32 + self.rect.height {
                 let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
                 // Needed to draw cursor even if we're on a blank line
                 unicode_line.push(" ");
@@ -173,12 +169,12 @@ impl Pane {
                         color = self.colors.comment;
                     }
 
-                    let screen_x = x * canvas.char_width + padding * 2;
-                    let screen_y = y * self.line_height - self.scroll_offset + padding * 2 + bar_height;
+                    let screen_x = x as f32 * app.char_width + padding * 2.0;
+                    let screen_y = y as f32 * self.line_height as f32 - self.scroll_offset as f32 + padding * 2.0 + bar_height;
 
-                    if screen_y - self.rect.y + canvas.font_size > mouse_y && screen_y - self.rect.y <= mouse_y {
+                    if screen_y - self.rect.y + app.font_size > app.mouse.y && screen_y - self.rect.y <= app.mouse.y {
                         self.cursor_y = i;
-                        if screen_x - self.rect.x + canvas.char_width > mouse_x && screen_x - self.rect.x <= mouse_x {
+                        if screen_x - self.rect.x + app.char_width > app.mouse.x && screen_x - self.rect.x <= app.mouse.x {
                             self.cursor_x = j;
                         }
                     }
@@ -188,24 +184,25 @@ impl Pane {
                         if (j >= sel_start_x || i > sel_start_y) && (j < sel_end_x || i < sel_end_y)
                         {
                             let rect = Rect::new(
-                                screen_x,
-                                screen_y,
-                                canvas.char_width,
-                                canvas.font_size,
+                                self.rect.x + screen_x,
+                                self.rect.y + screen_y,
+                                app.char_width,
+                                app.font_size,
                             );
-                            canvas.fill_rect(rect, self.colors.selection);
+                            app.draw_rect(rect, self.colors.selection);
                         }
                     }
 
                     // Draw character
-                    if y * self.line_height >= self.scroll_offset {
+                    if y as f32 * self.line_height >= self.scroll_offset as f32 {
                         if !c.trim().is_empty() {
 
-                            canvas.draw_char(
-                                color,
-                                screen_x,
-                                screen_y,
+                            app.draw_text(
                                 c,
+                                self.rect.x + screen_x,
+                                self.rect.y + screen_y,
+                                app.font_size,
+                                color,
                             );
                         }
                     }
@@ -213,12 +210,12 @@ impl Pane {
                     // Draw cursor
                     if is_active && i == buffer.cursor_y && j == buffer.cursor_x {
                         let rect = Rect::new(
-                            screen_x,
-                            screen_y,
-                            2,
-                            canvas.font_size,
+                            self.rect.x + screen_x as f32,
+                            self.rect.y + screen_y as f32,
+                            2.0,
+                            app.font_size,
                         );
-                        canvas.fill_rect(rect, self.colors.fg);
+                        app.draw_rect(rect, self.colors.fg);
                     }
 
                     x += 1;
@@ -233,73 +230,73 @@ impl Pane {
         self.display_line_count = y;
 
         // Draw the bar
-        let rect = Rect::new(0, 0, self.rect.w, bar_height);
-        canvas.fill_rect(rect, self.colors.ui_bg);
+        let rect = Rect::new(self.rect.x, self.rect.y, self.rect.width, bar_height);
+        app.draw_rect(rect, self.colors.ui_bg);
         let dirty_text = if buffer.is_dirty { "*" } else { "" };
         let bar_text = vec![dirty_text, " ", &buffer.name];
         for (i, c) in bar_text.iter().filter(|x| !x.is_empty()).enumerate() {
-            canvas.draw_char(self.colors.ui_fg, i as i32 * canvas.char_width + padding, padding, c);
+            app.draw_text(c, self.rect.x + i as f32 * app.char_width + padding, self.rect.y + padding, app.font_size, self.colors.ui_fg);
         }
 
     }
 
     pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {
         match kstr {
-            "Up" => buffer.cursor_up(1, false),
-            "Down" => buffer.cursor_down(1, false),
-            "Left" => buffer.cursor_left(false),
-            "Right" => buffer.cursor_right(false),
-            "PageUp" => self.scroll(buffer, -40),
-            "PageDown" => self.scroll(buffer, 40),
-            "Return" => buffer.break_line_with_auto_indent(),
-            "S-Return" => buffer.break_line(),
-            "Backspace" => buffer.remove_selection(),
-            "S-Backspace" => buffer.remove_selection(),
-            "Tab" => buffer.action_insert_text("    ".to_string()),
-            "S-Up" => buffer.cursor_up(1, true),
-            "S-Down" => buffer.cursor_down(1, true),
-            "S-Left" => buffer.cursor_left(true),
-            "S-Right" => buffer.cursor_right(true),
-            "C-A" => self.select_all(buffer),
-            "C-C" => buffer.clipboard_copy(),
-            "C-S" => buffer.save(),
-            "C-V" => buffer.clipboard_paste(),
-            "C-X" => buffer.clipboard_cut(),
-            "C-Z" => buffer.undo(),
-            "C-Up" => buffer.cursor_up(1, false),
-            "C-Down" => buffer.cursor_down(1, false),
-            "C-S-Up" => buffer.cursor_up(1, true),
-            "C-S-Down" => buffer.cursor_down(1, true),
-            "C-Right" => {
+            "up" => buffer.cursor_up(1, false),
+            "down" => buffer.cursor_down(1, false),
+            "left" => buffer.cursor_left(false),
+            "right" => buffer.cursor_right(false),
+            "pageup" => self.scroll(buffer, -40.0),
+            "pagedown" => self.scroll(buffer, 40.0),
+            "return" => buffer.break_line_with_auto_indent(),
+            "s-return" => buffer.break_line(),
+            "backspace" => buffer.remove_selection(),
+            "s-backspace" => buffer.remove_selection(),
+            "tab" => buffer.action_insert_text("    ".to_string()),
+            "s-up" => buffer.cursor_up(1, true),
+            "s-down" => buffer.cursor_down(1, true),
+            "s-left" => buffer.cursor_left(true),
+            "s-right" => buffer.cursor_right(true),
+            "c-a" => self.select_all(buffer),
+            "c-c" => buffer.clipboard_copy(),
+            "c-s" => buffer.save(),
+            "c-v" => buffer.clipboard_paste(),
+            "c-x" => buffer.clipboard_cut(),
+            "c-z" => buffer.undo(),
+            "c-up" => buffer.cursor_up(1, false),
+            "c-down" => buffer.cursor_down(1, false),
+            "c-s-up" => buffer.cursor_up(1, true),
+            "c-s-down" => buffer.cursor_down(1, true),
+            "c-right" => {
                 let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
                 buffer.cursor_y = y;
                 buffer.set_selection(false);
             }
-            "C-Left" => {
+            "c-left" => {
                 let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
                 buffer.cursor_y = y;
                 buffer.set_selection(false);
             }
-            "C-S-Right" => {
+            "c-s-right" => {
                 let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
                 buffer.cursor_y = y;
             }
-            "C-S-Left" => {
+            "c-s-left" => {
                 let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
                 buffer.cursor_y = y;
             }
-            "C-S-Z" => buffer.redo(),
-            "C-Backspace" => {
+            "c-s-z" => buffer.redo(),
+            "c-backspace" => {
                 let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
                 buffer.cursor_x = x;
                 buffer.cursor_y = y;
                 buffer.remove_selection();
             }
-            "C-S-\\" => {
+            "c-s-\\" => {
                 buffer.print();
                 return true;
             }
@@ -308,20 +305,20 @@ impl Pane {
         false
     }
 
-    pub fn scroll(&mut self, buffer: &Buffer, lines: i32) {
-        let padding = 5;
-        let bar_height: i32 = self.line_height as i32 + padding * 2;
+    pub fn scroll(&mut self, buffer: &Buffer, lines: f32) {
+        let padding = 5.0;
+        let bar_height: f32 = self.line_height + padding * 2.0;
 
         let mut new_value = self.scroll_lag + lines * self.line_height;
-        let new_offset = (self.scroll_offset + new_value) / self.line_height;
+        let new_offset = (self.scroll_offset as f32 + new_value) / self.line_height;
 
-        let scrolloff_start = 0;
-        let scrolloff_end = 5;
-        let end_val = max(0, self.display_line_count + scrolloff_end - (self.rect.h - bar_height) / self.line_height);
+        let scrolloff_start = 0.0;
+        let scrolloff_end = 5.0;
+        let end_val = f32::max(0.0, self.display_line_count as f32 + scrolloff_end - (self.rect.height - bar_height) / self.line_height);
         if new_offset < -scrolloff_start {
-            new_value = -scrolloff_start * self.line_height - self.scroll_offset;
+            new_value = -scrolloff_start * self.line_height - self.scroll_offset as f32;
         } else if new_offset > end_val {
-            new_value = end_val * self.line_height - self.scroll_offset;
+            new_value = end_val * self.line_height - self.scroll_offset as f32;
         }
 
         self.scroll_lag = new_value;
@@ -334,25 +331,27 @@ impl Pane {
 
     fn get_focused_cell(
         &mut self,
-        canvas: &Canvas,
-        x: i32,
-        y: i32,
+        app: &App,
+        x: f32,
+        y: f32,
     ) -> (usize, usize) {
-        let padding = 5;
-        let bar_height = canvas.font_size + padding * 2;
-        let x_cell = ((x - padding * 2 - (canvas.char_width / 2)) / canvas.char_width) as usize;
-        let y_cell = ((y - padding - bar_height - (canvas.font_size / 2)) / canvas.font_size)
+        let padding = 5.0;
+        let bar_height = app.font_size + padding * 2.0;
+        let x_cell = ((x - padding * 2.0 - (app.char_width / 2.0)) / app.char_width) as usize;
+        let y_cell = ((y - padding - bar_height - (app.font_size / 2.0)) / app.font_size)
             as usize;
         (x_cell, y_cell)
     }
 
     // Set the selection/cursor positions based on screen coordinates.
+    // TODO This doesn't actually take screen coordinates because draw() handles that now - What is
+    // this function actually doing? Do I need to port this logic into draw()?
     pub fn set_selection_from_screen(
         &mut self,
-        canvas: &Canvas,
+        // app: &App,
         mut buffer: &mut Buffer,
-        mouse_x: i32,
-        mouse_y: i32,
+        // mouse_x: f32,
+        // mouse_y: f32,
         extend: bool,
     ) {
         let mut x_target = 0;

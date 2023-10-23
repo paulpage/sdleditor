@@ -1,13 +1,10 @@
-use std::cmp::max;
 use std::env;
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 
-use sdl2::event::{Event, WindowEvent};
-use sdl2::keyboard::Mod;
-use sdl2::mouse::MouseButton;
-use sdl2::pixels::Color;
+use pgfx::app::App;
+use pgfx::types::{Color, Rect};
 
 mod pane;
 use pane::{Pane, PaneType};
@@ -18,51 +15,47 @@ use buffer::Buffer;
 mod file_manager;
 use file_manager::FileManager;
 
-mod canvas;
-use canvas::{Canvas, Rect};
-
 fn select_font() -> Option<PathBuf> {
     return Some(PathBuf::from("fonts/monospace.ttf"));
 }
 
 fn draw(
+    app: &mut App,
     panes: &mut Vec<Pane>,
     buffers: &mut Vec<Buffer>,
     pane_idx: usize,
-    mut canvas: &mut Canvas,
-    mouse_x: i32,
-    mouse_y: i32,
 ) {
-    canvas.clear(Color::RGB(0, 0, 0));
+    app.clear(Color::new(0, 0, 0));
     for (j, pane) in &mut panes.iter_mut().enumerate() {
-        pane.draw(&mut canvas, &buffers[pane.buffer_id], j == pane_idx, mouse_x, mouse_y);
+        pane.draw(app, &buffers[pane.buffer_id], j == pane_idx);
     }
 }
 
-fn next<T>(list: &[T], idx: usize) -> usize {
-    (idx + 1) % list.len()
+fn next(idx: usize, len: usize) -> usize {
+    (idx + 1) % len
 }
 
-fn prev<T>(list: &[T], idx: usize) -> usize {
-    (idx + list.len() - 1) % list.len()
+fn prev(idx: usize, len: usize) -> usize {
+    (idx + len - 1) % len
 }
 
-fn arrange(canvas: &Canvas, panes: &mut Vec<Pane>) {
-    let (w, h) = canvas.window_size();
+fn arrange(app: &App, panes: &mut Vec<Pane>) {
+    let w = app.window_width;
+    let h = app.window_height;
 
-    let padding = 5;
-    let pane_width = (f64::from(w) / panes.len() as f64).floor() as u32;
+    let padding = 5.0;
+    let pane_width = (w / panes.len() as f32).floor();
     let pane_height = h;
-    let mut x = 0;
-    let y = 0;
+    let mut x = 0.0;
+    let y = 0.0;
     for mut pane in &mut panes.iter_mut() {
         pane.rect = Rect {
             x: x + padding,
             y: y + padding,
-            w: max(0, pane_width as i32 - (padding * 2) as i32),
-            h: max(0, pane_height as i32 - (padding * 2) as i32),
+            width: f32::max(0.0, pane_width - (padding * 2.0)),
+            height: f32::max(0.0, pane_height - (padding * 2.0)),
         };
-        x += pane_width as i32;
+        x += pane_width;
     }
 }
 
@@ -71,13 +64,10 @@ fn main() {
         Some(p) => p,
         None => PathBuf::new(),
     };
+    let mut app = App::new("Sdleditor", path.to_str().unwrap(), 32.0);
 
-    let mut sdl_context = sdl2::init().unwrap();
-    let mut canvas = Canvas::new(&mut sdl_context, &path, 32);
-    canvas.set_font(&path, 32);
-
-    let mut buffers: Vec<Buffer> = Vec::new();
-    let mut panes: Vec<Pane> = Vec::new();
+    let mut buffers = Vec::new();
+    let mut panes = Vec::new();
     let mut pane_idx = 0;
 
     let args: Vec<String> = env::args().collect();
@@ -92,170 +82,130 @@ fn main() {
     panes.push(Pane::new(
         PaneType::Buffer,
         0,
-        canvas.font_size,
+        app.font_size,
     ));
-    arrange(&canvas, &mut panes);
+    arrange(&app, &mut panes);
 
-    let mut ctrl_pressed = false;
-    let mut alt_pressed = false;
     let mut fm = FileManager::new();
-    let mut needs_redraw;
+    let mut needs_redraw = false;
 
-    let mut mouse_x = 0;
-    let mut mouse_y = 0;
+    while !app.should_quit() {
+        needs_redraw = app.has_events;
 
-    'mainloop: loop {
-        needs_redraw = false;
-        for event in sdl_context.event_pump().unwrap().poll_iter() {
-            needs_redraw = true;
-            let pane = &mut panes[pane_idx];
-            let mut buffer = &mut buffers[pane.buffer_id];
-            if let Event::KeyDown {
-                keycode: Some(kc),
-                keymod,
-                ..
-            } = event
-            {
-                let mut key_string = String::new();
-                if keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD) {
-                    key_string.push_str("C-");
-                    ctrl_pressed = true;
+        let mut should_quit = false;
+        for key in &app.keys_pressed {
+            let kstr = app.get_key_string(key);
+            match kstr.as_str() {
+                "c-'" => {
+                    panes.push(Pane::new(
+                        PaneType::Buffer,
+                        panes[pane_idx].buffer_id,
+                        app.font_size
+                    ));
+                    arrange(&app, &mut panes);
+                    pane_idx += 1;
                 }
-                if keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD) {
-                    key_string.push_str("A-");
-                    alt_pressed = true;
+                "c-b" => panes[pane_idx].buffer_id = next(panes[pane_idx].buffer_id, buffers.len()),
+                "c-s-b" => {
+                    panes[pane_idx].buffer_id = prev(panes[pane_idx].buffer_id, buffers.len())
                 }
-                if keymod.contains(Mod::RSHIFTMOD) || keymod.contains(Mod::LSHIFTMOD) {
-                    key_string.push_str("S-");
+                "c-j" => pane_idx = next(pane_idx, panes.len()),
+                "c-k" => pane_idx = prev(pane_idx, panes.len()),
+                "c-q" => should_quit = true,
+                "c-o" => {
+                    let mut buffer = Buffer::new();
+                    fm.current_dir = env::current_dir().unwrap();
+                    fm.update(&mut buffer);
+                    panes[pane_idx].buffer_id = buffers.len();
+                    panes[pane_idx].pane_type = PaneType::FileManager;
+                    panes[pane_idx].scroll_offset = 0;
+                    buffers.push(buffer);
                 }
-                key_string.push_str(&kc.name());
-
-                let kstr: &str = &key_string.clone();
-
-                match kstr {
-                    "C-'" => {
-                        panes.push(Pane::new(
-                            PaneType::Buffer,
-                            0,
-                            canvas.font_size,
-                        ));
-                        arrange(&canvas, &mut panes);
-                        pane_idx += 1;
-                    }
-                    "C-B" => panes[pane_idx].buffer_id = next(&buffers, panes[pane_idx].buffer_id),
-                    "C-S-B" => {
-                        panes[pane_idx].buffer_id = prev(&buffers, panes[pane_idx].buffer_id)
-                    }
-                    "C-J" => pane_idx = next(&panes, pane_idx),
-                    "C-K" => pane_idx = prev(&panes, pane_idx),
-                    "C-Q" => break 'mainloop,
-                    "C-O" => {
-                        let mut buffer = Buffer::new();
-                        fm.current_dir = env::current_dir().unwrap();
-                        fm.update(&mut buffer);
-                        let pane = &mut panes[pane_idx];
-                        pane.buffer_id = buffers.len();
-                        pane.pane_type = PaneType::FileManager;
-                        pane.scroll_offset = 0;
-                        buffers.push(buffer);
-                    }
-                    "C-W" => {
-                        if panes.len() > 1 {
-                            panes.remove(pane_idx);
-                            pane_idx = prev(&panes, pane_idx);
-                            arrange(&canvas, &mut panes);
-                        }
-                    }
-                    _ => {
-                        match pane.pane_type {
-                            PaneType::Buffer => {
-                                if pane.handle_keystroke(buffer, kstr) {
-                                    break 'mainloop;
-                                }
-                            }
-                            PaneType::FileManager => {
-                                fm.handle_key(pane, buffer, kstr);
-                            }
-                        }
+                "c-w" => {
+                    if panes.len() > 1 {
+                        panes.remove(pane_idx);
+                        pane_idx = prev(pane_idx, panes.len());
+                        arrange(&app, &mut panes);
                     }
                 }
-            } else {
-                match event {
-                    Event::Quit { .. } => break 'mainloop,
-                    Event::KeyUp { keymod, .. } => {
-                        if !(keymod.contains(Mod::RCTRLMOD) || keymod.contains(Mod::LCTRLMOD)) {
-                            ctrl_pressed = false;
-                        }
-                        if !(keymod.contains(Mod::RALTMOD) || keymod.contains(Mod::LALTMOD)) {
-                            alt_pressed = false;
-                        }
-                    }
-                    Event::Window { win_event, .. } => {
-                        if let WindowEvent::Resized(w, h) = win_event {
-                            pane.rect.w = max(0, w as i32 - 40);
-                            pane.rect.h = max(0, h as i32 - 40);
-                            arrange(&canvas, &mut panes);
-                        }
-                    }
-                    Event::TextInput { text, .. } => match pane.pane_type {
+                _ => {
+                    let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+                    match panes[pane_idx].pane_type {
                         PaneType::Buffer => {
-                            if !ctrl_pressed && !alt_pressed {
-                                buffer.action_insert_text(text);
+                            if panes[pane_idx].handle_keystroke(&mut buf, kstr.as_str()) {
+                                should_quit = true;
                             }
                         }
                         PaneType::FileManager => {
-                            fm.current_search.push_str(&text);
-                            buffer.name = fm.current_search.clone();
-                            let mut selection = buffer.cursor_y;
-                            'searchloop: for (i, line) in
-                                buffer.contents[buffer.cursor_y..].iter().enumerate()
-                            {
-                                if line.starts_with(&fm.current_search) {
-                                    selection = i + buffer.cursor_y;
-                                    break 'searchloop;
-                                }
-                            }
-                            buffer.select_line(selection);
-                        }
-                    },
-                    Event::MouseButtonDown { x, y, clicks, .. } => {
-                        pane.set_selection_from_screen(&mut canvas, &mut buffer, x, y, false);
-                        if clicks > 1 {
-                            let (x, y) = buffer.prev_word(buffer.cursor_x, buffer.cursor_y);
-                            buffer.sel_x = x;
-                            buffer.sel_y = y;
-                            let (x, y) = buffer.next_word(buffer.cursor_x, buffer.cursor_y);
-                            buffer.cursor_x = x;
-                            buffer.cursor_y = y;
+                            fm.handle_key(&mut panes[pane_idx], &mut buf, kstr.as_str());
                         }
                     }
-                    Event::MouseMotion {
-                        mousestate, x, y, ..
-                    } => {
-                        mouse_x = x;
-                        mouse_y = y;
-                        if mousestate.is_mouse_button_pressed(MouseButton::Left) {
-                            pane.set_selection_from_screen(&mut canvas, &mut buffer, x, y, true);
+                }
+            }
+        }
+        if should_quit {
+            app.quit();
+        }
+
+        if app.window_size_changed {
+            panes[pane_idx].rect.width = f32::max(0.0, app.window_width - 40.0);
+            panes[pane_idx].rect.height = f32::max(0.0, app.window_height - 40.0);
+            arrange(&app, &mut panes);
+        }
+
+        for text in &app.text_entered {
+            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+            match panes[pane_idx].pane_type {
+                PaneType::Buffer => {
+                    buf.action_insert_text(text.to_string());
+                }
+                PaneType::FileManager => {
+                    fm.current_search.push_str(&text);
+                    buf.name = fm.current_search.clone();
+                    let mut selection = buf.cursor_y;
+                    'searchloop: for (i, line) in
+                        buf.contents[buf.cursor_y..].iter().enumerate()
+                    {
+                        if line.starts_with(&fm.current_search) {
+                            selection = i + buf.cursor_y;
+                            break 'searchloop;
                         }
                     }
-                    Event::MouseWheel { y, .. } => {
-                        pane.scroll(buffer, y * -5);
-                    }
-                    Event::KeyDown { .. } => {}
-                    _ => {}
+                    buf.select_line(selection);
                 }
             }
         }
 
+        if app.mouse_left_pressed {
+            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+            panes[pane_idx].set_selection_from_screen(&mut buf, false);
+            if app.mouse_left_clicks > 1 {
+                let (x, y) = buf.prev_word(buf.cursor_x, buf.cursor_y);
+                buf.sel_x = x;
+                buf.sel_y = y;
+                let (x, y) = buf.next_word(buf.cursor_x, buf.cursor_y);
+                buf.cursor_x = x;
+                buf.cursor_y = y;
+            }
+        }
+        if app.mouse_left_down {
+            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+            panes[pane_idx].set_selection_from_screen(&mut buf, true);
+        }
+        if app.scroll.y != 0.0 {
+            let mut buf = &mut buffers[panes[pane_idx].buffer_id];
+            panes[pane_idx].scroll(&mut buf, app.scroll.y * -5.0);
+        }
+
         for pane in &panes {
-            if pane.scroll_lag != 0 {
+            if pane.scroll_lag != 0.0 {
                 needs_redraw = true;
             }
         }
 
         if needs_redraw {
-            draw(&mut panes, &mut buffers, pane_idx, &mut canvas, mouse_x, mouse_y);
-            canvas.present();
+            draw(&mut app, &mut panes, &mut buffers, pane_idx);
+            app.present();
         }
 
         sleep(Duration::from_millis(5));
