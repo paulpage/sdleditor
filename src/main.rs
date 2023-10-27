@@ -109,7 +109,7 @@ impl Editor {
         }
     }
 
-    fn open_file(&mut self) {
+    fn open_file_dialog(&mut self) {
         let mut buffer = Buffer::new();
         self.fm.current_dir = env::current_dir().unwrap();
         self.fm.update(&mut buffer);
@@ -133,6 +133,18 @@ impl Editor {
 
     //========================================
 
+    // Utils
+    
+    fn open_file(&mut self, path: &str) {
+        let buffer = Buffer::from_path(path.to_string());
+        self.panes[self.pane_idx].buffer_id = self.buffers.len();
+        self.panes[self.pane_idx].pane_type = PaneType::Buffer;
+        self.panes[self.pane_idx].scroll_offset = 0.0;
+        self.buffers.push(buffer);
+    }
+
+    //========================================
+
     fn new(app: &App) -> Self {
         let mut editor = Editor {
             fm: FileManager::new(),
@@ -145,7 +157,8 @@ impl Editor {
             should_quit: false,
         };
         editor.add_pane();
-        editor.new_file();
+        // editor.new_file();
+        editor.open_file("src/main.rs");
         editor
     }
 
@@ -163,7 +176,7 @@ impl Editor {
                     "c-k" => self.select_prev_pane(),
                     "c-b" => self.select_next_buffer(),
                     "c-s-b" => self.select_prev_buffer(),
-                    "c-o" => self.open_file(),
+                    "c-o" => self.open_file_dialog(),
                     "c-q" => self.quit(),
                     _ => {
                         let buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];

@@ -100,7 +100,7 @@ impl Pane {
                 f32::max(self.line_height / 2.0, self.scroll_lag.abs() / 3.0),
                 self.scroll_lag.abs(),
             );
-            let scroll_pixels = self.scroll_lag.abs();
+            // let scroll_pixels = self.scroll_lag.abs();
             let direction = self.scroll_lag / self.scroll_lag.abs();
             self.scroll_offset += scroll_pixels * direction;
             self.scroll_lag -= scroll_pixels * direction;
@@ -219,8 +219,12 @@ impl Pane {
                         y += 1;
                     }
                 }
-                y += 1;
             }
+            // TODO This will make display_line_count almost accorate but not quite
+            // because it won't account for wrapped lines. But right now we're only using
+            // display_line_count to calculate scrolloff, so we don't really care about
+            // wrapped lines that are off the end of the screen.
+            y += 1;
         }
         self.display_line_count = y;
 
