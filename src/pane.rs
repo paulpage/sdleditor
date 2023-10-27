@@ -172,9 +172,10 @@ impl Pane {
                     let screen_x = x as f32 * app.char_width + padding * 2.0;
                     let screen_y = y as f32 * self.line_height - self.scroll_offset + padding * 2.0 + bar_height;
 
-                    if screen_y - self.rect.y + app.font_size > app.mouse.y && screen_y - self.rect.y <= app.mouse.y {
+                    // Set the selection for some reason
+                    if screen_y + self.rect.y + app.font_size > app.mouse.y && screen_y + self.rect.y <= app.mouse.y {
                         self.cursor_y = i;
-                        if screen_x - self.rect.x + app.char_width > app.mouse.x && screen_x - self.rect.x <= app.mouse.x {
+                        if screen_x + self.rect.x + app.char_width > app.mouse.x && screen_x + self.rect.x <= app.mouse.x {
                             self.cursor_x = j;
                         }
                     }
