@@ -35,7 +35,7 @@ pub struct Pane {
     pub pane_type: PaneType,
     pub rect: Rect,
     pub buffer_id: usize,
-    pub scroll_offset: i32,
+    pub scroll_offset: f32,
     pub scroll_lag: f32,
     pub line_height: f32,
     syntax: Syntax,
@@ -74,7 +74,7 @@ impl Pane {
             rect: Rect::new(0.0, 0.0, 0.0, 0.0),
             buffer_id,
             scroll_lag: 0.0,
-            scroll_offset: 0,
+            scroll_offset: 0.0,
             line_height,
             syntax,
             colors,
@@ -95,12 +95,14 @@ impl Pane {
 
         // Calculate scroll offset
         if self.scroll_lag != 0.0 {
+            // let scroll_pixels = 1.0;
             let scroll_pixels = f32::min(
                 f32::max(self.line_height / 2.0, self.scroll_lag.abs() / 3.0),
                 self.scroll_lag.abs(),
             );
+            let scroll_pixels = self.scroll_lag.abs();
             let direction = self.scroll_lag / self.scroll_lag.abs();
-            self.scroll_offset += (scroll_pixels * direction) as i32;
+            self.scroll_offset += scroll_pixels * direction;
             self.scroll_lag -= scroll_pixels * direction;
         }
 
@@ -130,7 +132,7 @@ impl Pane {
             };
             let mut is_line_comment = false;
 
-            if y as f32 * self.line_height < self.scroll_offset as f32 + self.rect.height {
+            if y as f32 * self.line_height < self.scroll_offset + self.rect.height {
                 let mut unicode_line = line.as_str().graphemes(true).collect::<Vec<&str>>();
                 // Needed to draw cursor even if we're on a blank line
                 unicode_line.push(" ");
@@ -168,7 +170,7 @@ impl Pane {
                     }
 
                     let screen_x = x as f32 * app.char_width + padding * 2.0;
-                    let screen_y = y as f32 * self.line_height - self.scroll_offset as f32 + padding * 2.0 + bar_height;
+                    let screen_y = y as f32 * self.line_height - self.scroll_offset + padding * 2.0 + bar_height;
 
                     if screen_y - self.rect.y + app.font_size > app.mouse.y && screen_y - self.rect.y <= app.mouse.y {
                         self.cursor_y = i;
@@ -189,7 +191,7 @@ impl Pane {
                     }
 
                     // Draw character
-                    if y as f32 * self.line_height >= self.scroll_offset as f32 && !c.trim().is_empty() {
+                    if y as f32 * self.line_height >= self.scroll_offset - self.line_height && !c.trim().is_empty() {
                         app.draw_text(
                             c,
                             self.rect.x + screen_x,
