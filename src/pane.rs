@@ -86,7 +86,7 @@ impl Pane {
     }
 
     pub fn draw(&mut self, app: &mut App, buffer: &Buffer, is_active: bool) {
-
+        pprof::time!();
         let padding = 5.0;
 
         // Fill background with border
@@ -95,12 +95,11 @@ impl Pane {
 
         // Calculate scroll offset
         if self.scroll_lag != 0.0 {
-            // let scroll_pixels = 1.0;
-            let scroll_pixels = f32::min(
-                f32::max(self.line_height / 2.0, self.scroll_lag.abs() / 3.0),
-                self.scroll_lag.abs(),
-            );
-            // let scroll_pixels = self.scroll_lag.abs();
+            // let scroll_pixels = f32::min(
+            //     f32::max(self.line_height / 2.0, self.scroll_lag.abs() / 3.0),
+            //     self.scroll_lag.abs(),
+            // );
+            let scroll_pixels = self.scroll_lag.abs();
             let direction = self.scroll_lag / self.scroll_lag.abs();
             self.scroll_offset += scroll_pixels * direction;
             self.scroll_lag -= scroll_pixels * direction;
@@ -236,7 +235,6 @@ impl Pane {
         for (i, c) in bar_text.iter().filter(|x| !x.is_empty()).enumerate() {
             app.draw_text(c, self.rect.x + i as f32 * app.char_width + padding, self.rect.y + padding, app.font_size, self.colors.ui_fg);
         }
-
     }
 
     pub fn handle_keystroke(&mut self, buffer: &mut Buffer, kstr: &str) -> bool {

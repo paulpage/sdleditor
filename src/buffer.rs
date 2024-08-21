@@ -102,6 +102,14 @@ impl Buffer {
 
     pub fn insert_line(&mut self, y: usize, s: String) {
         self.contents.insert(y, s);
+        self.undo_stack.push(Action {
+            deleted_text: None,
+            inserted_text: Some("\n".to_string()),
+            x1: 0,
+            y1: y,
+            x2: 0,
+            y2: y,
+        });
     }
 
     pub fn save(&mut self) {
