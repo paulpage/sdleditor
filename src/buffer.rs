@@ -1,6 +1,7 @@
 use std::cmp::{max, min};
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::path::Path;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 
@@ -47,10 +48,10 @@ impl Buffer {
         buffer
     }
 
-    pub fn from_path(path: String) -> Self {
+    pub fn from_path(path: impl AsRef<Path>) -> Self {
         let mut buffer = Self {
             contents: Vec::new(),
-            name: path.clone(),
+            name: path.as_ref().to_string_lossy().into_owned(),
             is_dirty: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -64,7 +65,7 @@ impl Buffer {
             .write(true)
             .create(true)
             .read(true)
-            .open(&path)
+            .open(path.as_ref())
             .unwrap();
         let reader = BufReader::new(file);
         for line in reader.lines() {

@@ -9,7 +9,4 @@ edition = "2018"
 clipboard = "0.5.0"
 unicode-segmentation = "1.9.0"
 regex = "1.5.6"
-rusttype = "0.9.2"
-pgfx = { version = "0.1.0", path = "../pgfx" }
-pprof = { path = "../pprof" }
-minstant = "0.1.4"
+pgfx = { git = "https://github.com/paulpage/pgfx", version = "0.1.0" }

@@ -1,5 +1,4 @@
-use pgfx::app::App;
-use pgfx::types::{Color, Rect};
+use pgfx::{Engine, Color, Rect};
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -85,8 +84,7 @@ impl Pane {
         }
     }
 
-    pub fn draw(&mut self, app: &mut App, buffer: &Buffer, is_active: bool) {
-        pprof::time!();
+    pub fn draw(&mut self, app: &mut Engine, buffer: &Buffer, is_active: bool) {
         let padding = 5.0;
 
         // Fill background with border
@@ -328,7 +326,7 @@ impl Pane {
 
     fn get_focused_cell(
         &mut self,
-        app: &App,
+        app: &Engine,
         x: f32,
         y: f32,
     ) -> (usize, usize) {
@@ -345,7 +343,7 @@ impl Pane {
     // this function actually doing? Do I need to port this logic into draw()?
     pub fn set_selection_from_screen(
         &mut self,
-        // app: &App,
+        // app: &Engine,
         mut buffer: &mut Buffer,
         // mouse_x: f32,
         // mouse_y: f32,

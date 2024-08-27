@@ -1,10 +1,9 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use pgfx::app::{App, Texture};
-use pgfx::types::{Color, Rect, Point};
+use pgfx::{Engine, Texture, Color, Rect, Point};
 
 mod pane;
 use pane::{Pane, PaneType};
@@ -16,7 +15,7 @@ mod file_manager;
 use file_manager::FileManager;
 
 fn select_font() -> Option<PathBuf> {
-    Some(PathBuf::from("C:\\dev\\apps\\sdleditor\\fonts\\monospace.ttf"))
+    Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fonts/monospace.ttf"))
 }
 
 fn next(idx: usize, len: usize) -> usize {
@@ -41,8 +40,7 @@ struct Editor {
 }
 
 impl Editor {
-    fn draw(&mut self, app: &mut App) {
-        let start = Instant::now();
+    fn draw(&mut self, app: &mut Engine) {
         app.clear(Color::new(0, 0, 0));
         for (j, pane) in &mut self.panes.iter_mut().enumerate() {
             pane.draw(app, &self.buffers[pane.buffer_id], j == self.pane_idx);
@@ -58,7 +56,7 @@ impl Editor {
         let pane_height = h;
         let mut x = 0.0;
         let y = 0.0;
-        for mut pane in &mut self.panes.iter_mut() {
+        for pane in &mut self.panes.iter_mut() {
             pane.rect = Rect {
                 x: x + padding,
                 y: y + padding,
@@ -136,8 +134,8 @@ impl Editor {
 
     // Utils
     
-    fn open_file(&mut self, path: &str) {
-        let buffer = Buffer::from_path(path.to_string());
+    fn open_file(&mut self, path: impl AsRef<Path>) {
+        let buffer = Buffer::from_path(path);
         self.panes[self.pane_idx].buffer_id = self.buffers.len();
         self.panes[self.pane_idx].pane_type = PaneType::Buffer;
         self.panes[self.pane_idx].scroll_offset = 0.0;
@@ -146,7 +144,7 @@ impl Editor {
 
     //========================================
 
-    fn new(app: &App) -> Self {
+    fn new(app: &Engine) -> Self {
         let mut editor = Editor {
             fm: FileManager::new(),
             buffers: Vec::new(),
@@ -159,27 +157,12 @@ impl Editor {
         };
         editor.add_pane();
         // editor.new_file();
-        editor.open_file("C:\\dev\\apps\\sdleditor\\src\\main.rs");
+        editor.open_file(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"));
         editor
     }
 
-    fn run(&mut self, app: &mut App) {
-        pprof::time!();
-        let music = app.load_sound("C:\\dev\\apps\\pgfx\\res\\spinning_rat.ogg");
-        let pic = Texture::from_file("C:\\dev\\apps\\res\\bird.png").unwrap();
-        let mut rotation = 0.0;
-        let mut is_playing = false;
-
-        let mut start = Instant::now();
-
-
-        while !app.should_quit() {
-
-            let duration = start.elapsed();
-            start = Instant::now();
-
-            let mut start_music = false;
-            let mut stop_music = false;
+    fn run(&mut self, app: &mut Engine) {
+        while app.update() {
 
             let mut needs_redraw = app.has_events;
 
@@ -194,14 +177,6 @@ impl Editor {
                     "c-s-b" => self.select_prev_buffer(),
                     "c-o" => self.open_file_dialog(),
                     "c-q" => self.quit(),
-                    "c-m" => {
-                        is_playing = !is_playing;
-                        if is_playing {
-                            start_music = true;
-                        } else {
-                            stop_music = true;
-                        }
-                    },
                     _ => {
                         let buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];
                         match self.panes[self.pane_idx].pane_type {
@@ -218,17 +193,6 @@ impl Editor {
                 }
             }
 
-            if start_music {
-                app.play_music(&music);
-                app.resume_music();
-            }
-            if stop_music {
-                app.pause_music();
-            }
-            if is_playing {
-                self.panes[self.pane_idx].scroll(1.0);
-            }
-
             if self.should_quit {
                 app.quit();
             }
@@ -242,7 +206,7 @@ impl Editor {
             }
 
             for text in &app.text_entered {
-                let mut buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];
+                let buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];
                 match self.panes[self.pane_idx].pane_type {
                     PaneType::Buffer => {
                         buf.action_insert_text(text.to_string());
@@ -265,7 +229,7 @@ impl Editor {
             }
 
             if app.mouse_left_pressed {
-                let mut buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];
+                let buf = &mut self.buffers[self.panes[self.pane_idx].buffer_id];
                 self.panes[self.pane_idx].set_selection_from_screen(buf, false);
                 if app.mouse_left_clicks > 1 {
                     let (x, y) = buf.prev_word(buf.cursor_x, buf.cursor_y);
@@ -293,15 +257,9 @@ impl Editor {
             needs_redraw = true;
             if needs_redraw {
                 self.draw(app);
-                // app.draw_rotated_texture(&pic, Rect::new(0.0, 0.0, pic.width, pic.height), Rect::new(app.mouse.x, app.mouse.y, pic.width, pic.height), Point::new(pic.width/2.0, pic.height/2.0), rotation);
                 let buf = &self.buffers[self.panes[self.pane_idx].buffer_id];
                 let pane = &self.panes[self.pane_idx];
                 let percentage = pane.scroll_offset / (buf.contents.len() as f32 * pane.line_height);
-                rotation = percentage * 100.0;
-                if is_playing {
-                    rotation += 0.1;
-                }
-                app.present();
             }
 
             // sleep(Duration::from_millis(1));
@@ -315,9 +273,8 @@ fn main() {
         None => PathBuf::new(),
     };
 
-    let mut app = App::new("Sdleditor", path.to_str().unwrap(), 16.0);
+    let mut app = Engine::new("Sdleditor");
     let mut editor = Editor::new(&app);
-    pprof::init();
+    app.set_font(path, 32.0);
     editor.run(&mut app); 
-    pprof::print();
 }
